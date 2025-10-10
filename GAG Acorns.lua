@@ -1,5 +1,5 @@
 -- // ===== Hacker Style Dev Utility: Acorn Auto-Tween + AFK + Sliders =====
--- // Hotkeys: [R]=Run  [F]=AFK  [M]=Minimize    Buttons: [–]=Minimize [X]=Destroy
+-- // Hotkeys: [R]=Run  [F]=AFK  [M]=Minimize    Buttons: [–]=Minimize
 
 -- ========== Services ==========
 local Players          = game:GetService("Players")
