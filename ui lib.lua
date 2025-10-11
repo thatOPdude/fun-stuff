@@ -826,6 +826,4 @@ local function hookCanvas(win)
 end
 
 -- expose
-return function()
-	return setmetatable({}, Rayfield)
-end
+return setmetatable({}, Rayfield)
