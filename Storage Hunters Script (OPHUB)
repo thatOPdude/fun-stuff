@@ -80,6 +80,11 @@ local autoTotEnabled      = false
 local totLoopRunning      = false
 local totDelay            = 1.5
 
+-- Halloween / Auto Dig Grave State
+local autoDigEnabled      = false
+local digLoopRunning      = false
+local digDelay            = 1.5
+
 -- =======================================================================
 --   HELPER & RECOVERY FUNCTIONS
 -- =======================================================================
@@ -573,7 +578,7 @@ local function clearESP()
 end
 
 -- =======================================================================
---   HALLOWEEN / TRICK OR TREAT LOGIC
+--   HALLOWEEN / TRICK OR TREAT & GRAVE LOGIC
 -- =======================================================================
 local function getHalloweenBuildingFolder()
 	local areas = Workspace:FindFirstChild("Areas")
@@ -585,6 +590,15 @@ local function getHalloweenBuildingFolder()
 	if not tot then return nil end
 
 	return tot:FindFirstChild("Building")
+end
+
+local function getHalloweenGraveFolder()
+	local areas = Workspace:FindFirstChild("Areas")
+	if not areas then return nil end
+	local hw = areas:FindFirstChild("Halloween")
+	if not hw then return nil end
+
+	return hw:FindFirstChild("Grave")
 end
 
 local function interactWithPrompt(prompt)
@@ -690,6 +704,97 @@ local function runTrickOrTreatSweep(singleRun)
 	totLoopRunning = false
 end
 
+-- Resolve all grave targets and prompts
+local function getGraveTargets()
+	local graveFolder = getHalloweenGraveFolder()
+	if not graveFolder then return {} end
+
+	local list = {}
+
+	-- Method A: Scan Grave.Parts directly
+	local partsFolder = graveFolder:FindFirstChild("Parts")
+	if partsFolder then
+		for _, part in ipairs(partsFolder:GetChildren()) do
+			local prompt = part:FindFirstChild("GraveDigPrompt", true) or part:FindFirstChildOfClass("ProximityPrompt", true)
+			if prompt then
+				local tpPoint = part:FindFirstChild("GraveDigPromptPoint", true) or prompt.Parent
+				table.insert(list, {
+					part = part,
+					point = tpPoint,
+					prompt = prompt
+				})
+			end
+		end
+	end
+
+	-- Method B: Recursive fallback if not populated
+	if #list == 0 then
+		for _, desc in ipairs(graveFolder:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") and (desc.Name == "GraveDigPrompt" or string.find(desc.Name, "Dig")) then
+				local tpPoint = desc.Parent
+				local hostPart = (tpPoint:IsA("BasePart") and tpPoint) or (tpPoint:IsA("Attachment") and tpPoint.Parent) or graveFolder:FindFirstChildOfClass("BasePart", true)
+				table.insert(list, {
+					part = hostPart,
+					point = tpPoint,
+					prompt = desc
+				})
+			end
+		end
+	end
+
+	return list
+end
+
+local function runGraveDigSweep(singleRun)
+	if digLoopRunning and not singleRun then return end
+	digLoopRunning = true
+
+	local graves = getGraveTargets()
+	if #graves == 0 then
+		window:Notify({
+			title = "Auto Dig Grave",
+			content = "No graves or GraveDigPrompts found!",
+			duration = 3
+		})
+		digLoopRunning = false
+		return
+	end
+
+	for index, graveData in ipairs(graves) do
+		if not autoDigEnabled and not singleRun then break end
+
+		local hrp = getHRP()
+		local prompt = graveData.prompt
+		local targetPoint = graveData.point or graveData.part
+
+		if hrp and prompt and targetPoint then
+			cancelCurrentTween()
+
+			local targetCFrame = nil
+			if targetPoint:IsA("BasePart") then
+				targetCFrame = targetPoint.CFrame
+			elseif targetPoint:IsA("Attachment") then
+				targetCFrame = targetPoint.WorldCFrame
+			elseif graveData.part and graveData.part:IsA("BasePart") then
+				targetCFrame = graveData.part.CFrame
+			end
+
+			if targetCFrame then
+				hrp.CFrame = targetCFrame + Vector3.new(0, 2.5, 0)
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+
+				task.wait(0.3)
+
+				interactWithPrompt(prompt)
+				task.wait(digDelay)
+			end
+		end
+	end
+
+	digLoopRunning = false
+end
+
 -- Respawn hooks
 localPlayer.CharacterAdded:Connect(function(char)
 	applyCharacterSettings(char)
@@ -788,13 +893,14 @@ window:Notify({
 })
 
 -- -----------------------------------------------------------------------
---   TAB: HALLOWEEN (TRICK OR TREAT)
+--   TAB: HALLOWEEN (TRICK OR TREAT & GRAVES)
 -- -----------------------------------------------------------------------
 local halloweenTab = window:CreateTab({
 	name = "Halloween",
 	icon = 0
 })
 
+-- --- Trick or Treat Section ---
 halloweenTab:CreateToggle({
 	name = "Auto Trick or Treat (Loop)",
 	currentValue = false,
@@ -828,6 +934,45 @@ halloweenTab:CreateSlider({
 	currentValue = 1.5,
 	callback = function(val)
 		totDelay = val
+	end
+})
+
+halloweenTab:CreateDivider()
+
+-- --- Auto Dig Grave Section ---
+halloweenTab:CreateToggle({
+	name = "Auto Dig Graves (Loop)",
+	currentValue = false,
+	callback = function(value)
+		autoDigEnabled = value
+		if autoDigEnabled then
+			task.spawn(function()
+				while autoDigEnabled do
+					runGraveDigSweep(false)
+					task.wait(1)
+				end
+			end)
+		end
+	end
+})
+
+halloweenTab:CreateButton({
+	name = "Dig All Graves (Once)",
+	callback = function()
+		task.spawn(function()
+			runGraveDigSweep(true)
+		end)
+	end
+})
+
+halloweenTab:CreateSlider({
+	name = "Grave Delay",
+	range = { 0.5, 5 },
+	increment = 0.1,
+	suffix = " s",
+	currentValue = 1.5,
+	callback = function(val)
+		digDelay = val
 	end
 })
 
