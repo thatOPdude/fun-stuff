@@ -578,7 +578,7 @@ local function clearESP()
 end
 
 -- =======================================================================
---   HALLOWEEN / TRICK OR TREAT & GRAVE LOGIC
+--   HALLOWEEN / TRICK OR TREAT LOGIC (FIXED PROMPT & CFRAME RESOLVER)
 -- =======================================================================
 local function getHalloweenBuildingFolder()
 	local areas = Workspace:FindFirstChild("Areas")
@@ -596,99 +596,91 @@ local function interactWithPrompt(prompt)
 	if not prompt or not prompt.Parent then return end
 
 	if typeof(fireproximityprompt) == "function" then
-		fireproximityprompt(prompt)
+		pcall(function()
+			fireproximityprompt(prompt, 1, true)
+		end)
+		pcall(function()
+			fireproximityprompt(prompt)
+		end)
 	else
 		pcall(function()
 			prompt:InputHoldBegin()
-			task.wait((prompt.HoldDuration or 0.5) + 0.05)
+			task.wait((prompt.HoldDuration or 0.5) + 0.1)
 			prompt:InputHoldEnd()
 		end)
 	end
 end
 
-local function resolveHouseData(house)
-	local prompt = house:FindFirstChild("TrickOrTreatPrompt", true)
-	if not prompt then
-		prompt = house:FindFirstChildOfClass("ProximityPrompt", true)
-	end
+-- Collects every single house in Building regardless of cube naming (Cube.009, Cube.007, Main, etc.)
+local function getAllHouses()
+	local buildingFolder = getHalloweenBuildingFolder()
+	if not buildingFolder then return {} end
 
-	local tpTarget = nil
+	local houseList = {}
 
-	tpTarget = house:FindFirstChild("Meshes/portal_Cube.001 (1)", true)
+	for index, house in ipairs(buildingFolder:GetChildren()) do
+		local prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
+			or house:FindFirstChildOfClass("ProximityPrompt", true)
 
-	if not tpTarget then
-		tpTarget = house:FindFirstChild("Meshes/tt1_tt.003", true)
-	end
-
-	if not tpTarget and house:FindFirstChild("Parts") then
-		for _, child in ipairs(house.Parts:GetDescendants()) do
-			if child:IsA("BasePart") and string.find(child.Name, "portal_Cube") then
-				tpTarget = child
-				break
-			end
+		if prompt then
+			local promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) or prompt.Parent
+			table.insert(houseList, {
+				house  = house,
+				point  = promptPoint,
+				prompt = prompt
+			})
 		end
 	end
 
-	if not tpTarget and house:FindFirstChild("Neon") then
-		for _, child in ipairs(house.Neon:GetDescendants()) do
-			if child:IsA("BasePart") and string.find(child.Name, "tt1_tt") then
-				tpTarget = child
-				break
-			end
-		end
-	end
-
-	if not tpTarget and prompt then
-		local parent = prompt.Parent
-		if parent:IsA("BasePart") then
-			tpTarget = parent
-		elseif parent:IsA("Attachment") and parent.Parent:IsA("BasePart") then
-			tpTarget = parent.Parent
-		end
-	end
-
-	if not tpTarget then
-		tpTarget = house.PrimaryPart or house:FindFirstChildOfClass("BasePart", true)
-	end
-
-	return tpTarget, prompt
+	return houseList
 end
 
 local function runTrickOrTreatSweep(singleRun)
 	if totLoopRunning and not singleRun then return end
 	totLoopRunning = true
 
-	local buildingFolder = getHalloweenBuildingFolder()
-	if not buildingFolder then
+	local houses = getAllHouses()
+	if #houses == 0 then
 		window:Notify({
 			title = "Trick or Treat",
-			content = "Building folder could not be found!",
+			content = "No houses or prompts found in Building!",
 			duration = 3
 		})
 		totLoopRunning = false
 		return
 	end
 
-	local houses = buildingFolder:GetChildren()
-
-	for index, house in ipairs(houses) do
+	for index, houseData in ipairs(houses) do
 		if not autoTotEnabled and not singleRun then break end
 
-		local targetPart, prompt = resolveHouseData(house)
 		local hrp = getHRP()
+		local prompt = houseData.prompt
+		local targetPoint = houseData.point
 
-		if hrp and targetPart and prompt then
+		if hrp and prompt and prompt.Parent and targetPoint then
 			cancelCurrentTween()
 
-			local targetCFrame = targetPart:IsA("BasePart") and targetPart.CFrame or targetPart:GetPivot()
-			hrp.CFrame = targetCFrame + Vector3.new(0, 3, 0)
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			hrp.AssemblyAngularVelocity = Vector3.zero
+			-- Calculate exact WorldCFrame so Attachments aren't confused with part centers
+			local targetCFrame = nil
+			if targetPoint:IsA("Attachment") then
+				targetCFrame = targetPoint.WorldCFrame
+			elseif targetPoint:IsA("BasePart") then
+				targetCFrame = targetPoint.CFrame
+			elseif targetPoint.Parent and targetPoint.Parent:IsA("BasePart") then
+				targetCFrame = targetPoint.Parent.CFrame
+			end
 
-			task.wait(0.3)
+			if targetCFrame then
+				-- Teleport 1.5 studs directly in front of the prompt point
+				hrp.CFrame = targetCFrame + Vector3.new(0, 1.5, 0)
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
 
-			interactWithPrompt(prompt)
-			task.wait(totDelay)
+				task.wait(0.3)
+
+				interactWithPrompt(prompt)
+				task.wait(totDelay)
+			end
 		end
 	end
 
@@ -707,11 +699,8 @@ local function getAllGraveSpots()
 	local list = {}
 	local addedPrompts = {}
 
-	-- Iterate over every single child in Halloween to catch all identical "Grave" models
 	for _, child in ipairs(hw:GetChildren()) do
 		if string.lower(child.Name) == "grave" or string.find(string.lower(child.Name), "grave") then
-			
-			-- 1. Check inside child.Parts (each child in Parts is a grave)
 			local partsFolder = child:FindFirstChild("Parts")
 			if partsFolder then
 				for _, subGrave in ipairs(partsFolder:GetChildren()) do
@@ -731,7 +720,6 @@ local function getAllGraveSpots()
 				end
 			end
 
-			-- 2. Fallback check for any prompts directly under this Grave model
 			for _, desc in ipairs(child:GetDescendants()) do
 				if desc:IsA("ProximityPrompt") and (desc.Name == "GraveDigPrompt" or string.find(desc.Name, "Dig")) then
 					if not addedPrompts[desc] then
@@ -751,7 +739,6 @@ local function getAllGraveSpots()
 		end
 	end
 
-	-- 3. Global fallback across all of Halloween if folder naming varies
 	if #list == 0 then
 		for _, desc in ipairs(hw:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") and (desc.Name == "GraveDigPrompt" or string.find(desc.Name, "Dig")) then
@@ -786,7 +773,6 @@ local function runGraveDigSweep(singleRun)
 		return
 	end
 
-	-- Sweep each and every individual grave in order
 	for index, graveData in ipairs(graves) do
 		if not autoDigEnabled and not singleRun then break end
 
@@ -794,9 +780,7 @@ local function runGraveDigSweep(singleRun)
 		local prompt = graveData.prompt
 		local targetPoint = graveData.point or graveData.part
 
-		-- If the grave exists and its prompt is enabled / ready to dig
 		if hrp and prompt and prompt.Parent and targetPoint then
-			-- Skip grave if it was already dug and disabled by the game
 			if prompt.Enabled then
 				cancelCurrentTween()
 
