@@ -592,15 +592,6 @@ local function getHalloweenBuildingFolder()
 	return tot:FindFirstChild("Building")
 end
 
-local function getHalloweenGraveFolder()
-	local areas = Workspace:FindFirstChild("Areas")
-	if not areas then return nil end
-	local hw = areas:FindFirstChild("Halloween")
-	if not hw then return nil end
-
-	return hw:FindFirstChild("Grave")
-end
-
 local function interactWithPrompt(prompt)
 	if not prompt or not prompt.Parent then return end
 
@@ -704,40 +695,75 @@ local function runTrickOrTreatSweep(singleRun)
 	totLoopRunning = false
 end
 
--- Resolve all grave targets and prompts
-local function getGraveTargets()
-	local graveFolder = getHalloweenGraveFolder()
-	if not graveFolder then return {} end
+-- =======================================================================
+--   ACCURATE MULTI-GRAVE SCANNER
+-- =======================================================================
+local function getAllGraveSpots()
+	local areas = Workspace:FindFirstChild("Areas")
+	if not areas then return {} end
+	local hw = areas:FindFirstChild("Halloween")
+	if not hw then return {} end
 
 	local list = {}
+	local addedPrompts = {}
 
-	-- Method A: Scan Grave.Parts directly
-	local partsFolder = graveFolder:FindFirstChild("Parts")
-	if partsFolder then
-		for _, part in ipairs(partsFolder:GetChildren()) do
-			local prompt = part:FindFirstChild("GraveDigPrompt", true) or part:FindFirstChildOfClass("ProximityPrompt", true)
-			if prompt then
-				local tpPoint = part:FindFirstChild("GraveDigPromptPoint", true) or prompt.Parent
-				table.insert(list, {
-					part = part,
-					point = tpPoint,
-					prompt = prompt
-				})
+	-- Iterate over every single child in Halloween to catch all identical "Grave" models
+	for _, child in ipairs(hw:GetChildren()) do
+		if string.lower(child.Name) == "grave" or string.find(string.lower(child.Name), "grave") then
+			
+			-- 1. Check inside child.Parts (each child in Parts is a grave)
+			local partsFolder = child:FindFirstChild("Parts")
+			if partsFolder then
+				for _, subGrave in ipairs(partsFolder:GetChildren()) do
+					local prompt = subGrave:FindFirstChild("GraveDigPrompt", true) 
+						or subGrave:FindFirstChildOfClass("ProximityPrompt", true)
+					
+					if prompt and not addedPrompts[prompt] then
+						addedPrompts[prompt] = true
+						local tpPoint = subGrave:FindFirstChild("GraveDigPromptPoint", true) 
+							or prompt.Parent
+						table.insert(list, {
+							part   = subGrave,
+							point  = tpPoint,
+							prompt = prompt
+						})
+					end
+				end
+			end
+
+			-- 2. Fallback check for any prompts directly under this Grave model
+			for _, desc in ipairs(child:GetDescendants()) do
+				if desc:IsA("ProximityPrompt") and (desc.Name == "GraveDigPrompt" or string.find(desc.Name, "Dig")) then
+					if not addedPrompts[desc] then
+						addedPrompts[desc] = true
+						local tpPoint = desc.Parent
+						local hostPart = (tpPoint:IsA("BasePart") and tpPoint) 
+							or (tpPoint:IsA("Attachment") and tpPoint.Parent) 
+							or child:FindFirstChildOfClass("BasePart", true)
+						table.insert(list, {
+							part   = hostPart,
+							point  = tpPoint,
+							prompt = desc
+						})
+					end
+				end
 			end
 		end
 	end
 
-	-- Method B: Recursive fallback if not populated
+	-- 3. Global fallback across all of Halloween if folder naming varies
 	if #list == 0 then
-		for _, desc in ipairs(graveFolder:GetDescendants()) do
+		for _, desc in ipairs(hw:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") and (desc.Name == "GraveDigPrompt" or string.find(desc.Name, "Dig")) then
-				local tpPoint = desc.Parent
-				local hostPart = (tpPoint:IsA("BasePart") and tpPoint) or (tpPoint:IsA("Attachment") and tpPoint.Parent) or graveFolder:FindFirstChildOfClass("BasePart", true)
-				table.insert(list, {
-					part = hostPart,
-					point = tpPoint,
-					prompt = desc
-				})
+				if not addedPrompts[desc] then
+					addedPrompts[desc] = true
+					local tpPoint = desc.Parent
+					table.insert(list, {
+						part   = (tpPoint:IsA("BasePart") and tpPoint) or (tpPoint:IsA("Attachment") and tpPoint.Parent) or desc.Parent,
+						point  = tpPoint,
+						prompt = desc
+					})
+				end
 			end
 		end
 	end
@@ -749,17 +775,18 @@ local function runGraveDigSweep(singleRun)
 	if digLoopRunning and not singleRun then return end
 	digLoopRunning = true
 
-	local graves = getGraveTargets()
+	local graves = getAllGraveSpots()
 	if #graves == 0 then
 		window:Notify({
 			title = "Auto Dig Grave",
-			content = "No graves or GraveDigPrompts found!",
+			content = "No graves found in workspace!",
 			duration = 3
 		})
 		digLoopRunning = false
 		return
 	end
 
+	-- Sweep each and every individual grave in order
 	for index, graveData in ipairs(graves) do
 		if not autoDigEnabled and not singleRun then break end
 
@@ -767,27 +794,33 @@ local function runGraveDigSweep(singleRun)
 		local prompt = graveData.prompt
 		local targetPoint = graveData.point or graveData.part
 
-		if hrp and prompt and targetPoint then
-			cancelCurrentTween()
+		-- If the grave exists and its prompt is enabled / ready to dig
+		if hrp and prompt and prompt.Parent and targetPoint then
+			-- Skip grave if it was already dug and disabled by the game
+			if prompt.Enabled then
+				cancelCurrentTween()
 
-			local targetCFrame = nil
-			if targetPoint:IsA("BasePart") then
-				targetCFrame = targetPoint.CFrame
-			elseif targetPoint:IsA("Attachment") then
-				targetCFrame = targetPoint.WorldCFrame
-			elseif graveData.part and graveData.part:IsA("BasePart") then
-				targetCFrame = graveData.part.CFrame
-			end
+				local targetCFrame = nil
+				if targetPoint:IsA("BasePart") then
+					targetCFrame = targetPoint.CFrame
+				elseif targetPoint:IsA("Attachment") then
+					targetCFrame = targetPoint.WorldCFrame
+				elseif graveData.part and graveData.part:IsA("BasePart") then
+					targetCFrame = graveData.part.CFrame
+				elseif graveData.part and graveData.part:IsA("Model") then
+					targetCFrame = graveData.part:GetPivot()
+				end
 
-			if targetCFrame then
-				hrp.CFrame = targetCFrame + Vector3.new(0, 2.5, 0)
-				hrp.AssemblyLinearVelocity = Vector3.zero
-				hrp.AssemblyAngularVelocity = Vector3.zero
+				if targetCFrame then
+					hrp.CFrame = targetCFrame + Vector3.new(0, 2.5, 0)
+					hrp.AssemblyLinearVelocity = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
 
-				task.wait(0.3)
+					task.wait(0.3)
 
-				interactWithPrompt(prompt)
-				task.wait(digDelay)
+					interactWithPrompt(prompt)
+					task.wait(digDelay)
+				end
 			end
 		end
 	end
