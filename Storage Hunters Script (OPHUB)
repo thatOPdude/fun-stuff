@@ -1,0 +1,1280 @@
+-- made by thatOPdude this shit got fuckin auto trick or treat a lot of tps tween to zombies zombie esp and tracers and fun shi so have fun with this, also it works on solara thats what i made it with
+
+
+-- =======================================================================
+--   LOAD RAYFIELD GEN2
+-- =======================================================================
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+-- =======================================================================
+--   SERVICES
+-- =======================================================================
+local TweenService      = game:GetService("TweenService")
+local Players           = game:GetService("Players")
+local Workspace         = game:GetService("Workspace")
+local RunService        = game:GetService("RunService")
+local Lighting          = game:GetService("Lighting")
+local UserInputService  = game:GetService("UserInputService")
+local VirtualUser       = game:GetService("VirtualUser")
+
+local localPlayer = Players.LocalPlayer
+local camera      = Workspace.CurrentCamera
+
+-- =======================================================================
+--   STATE CONFIGURATION
+-- =======================================================================
+-- Combat / Target State
+local tweenSpeed        = 100
+local OFFSET            = Vector3.new(0, 3, 4)
+local activeTween       = nil
+local tracerEnabled     = false
+local espEnabled        = false
+local antiAfkEnabled    = false
+local antiAfkConn       = nil
+local playerAttachment  = nil
+local tracerBeam        = nil
+
+-- Player & Movement State
+local currentWalkSpeed    = 16
+local currentJumpPower    = 50
+local currentGravity      = Workspace.Gravity
+local infJumpEnabled      = false
+local fullbrightEnabled   = false
+
+-- Noclip State
+local noclipEnabled       = false
+local noclipConn          = nil
+
+-- Fly State
+local flyEnabled          = false
+local flySpeed            = 60
+local flyConn             = nil
+local flyKeys             = { W = false, A = false, S = false, D = false, Up = false, Down = false }
+
+-- Walk on Water State
+local walkOnWaterEnabled  = false
+local waterWalkConn       = nil
+local waterRayParams      = RaycastParams.new()
+waterRayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- Fun / FX State
+local ragdollEnabled      = false
+local fxEnabled           = false
+local fxConnections       = {}
+local fxEmitters          = {}
+local trackedFxChars      = {}
+
+-- Whitelist for Jump & Fall FX targets
+local fxWhitelist = {
+	["potatosquatshorts"] = true,
+	["bv013346"]           = true
+}
+
+-- Matrix Rain State
+local matrixEnabled       = false
+local matrixGui           = nil
+local matrixConns         = {}
+
+-- Halloween / Trick or Treat State
+local autoTotEnabled      = false
+local totLoopRunning      = false
+local totDelay            = 1.5
+
+-- =======================================================================
+--   HELPER & RECOVERY FUNCTIONS
+-- =======================================================================
+local function getHumanoid(char)
+	char = char or localPlayer.Character
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getHRP(char)
+	char = char or localPlayer.Character
+	return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
+end
+
+local function applyCharacterSettings(char)
+	local hum = char:WaitForChild("Humanoid", 5)
+	if hum then
+		hum.UseJumpPower = true
+		hum.WalkSpeed    = currentWalkSpeed
+		hum.JumpPower    = currentJumpPower
+	end
+end
+
+-- =======================================================================
+--   MOVEMENT / PHYSICS LOGIC
+-- =======================================================================
+-- Noclip
+local function setNoclip(state)
+	noclipEnabled = state
+	if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+
+	if state then
+		noclipConn = RunService.Stepped:Connect(function()
+			local char = localPlayer.Character
+			if not char then return end
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = false
+				end
+			end
+		end)
+	end
+end
+
+-- Fly
+local function getFlyDirection()
+	local cf = camera.CFrame
+	local dir = Vector3.zero
+	if flyKeys.W    then dir += cf.LookVector end
+	if flyKeys.S    then dir -= cf.LookVector end
+	if flyKeys.A    then dir -= cf.RightVector end
+	if flyKeys.D    then dir += cf.RightVector end
+	if flyKeys.Up   then dir += Vector3.new(0, 1, 0) end
+	if flyKeys.Down then dir -= Vector3.new(0, 1, 0) end
+
+	if dir.Magnitude > 0 then
+		dir = dir.Unit
+	end
+	return dir
+end
+
+local function setFly(state)
+	flyEnabled = state
+	if flyConn then flyConn:Disconnect(); flyConn = nil end
+
+	local hum = getHumanoid()
+	local hrp = getHRP()
+
+	if state then
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
+		if hrp then
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+
+		flyConn = RunService.RenderStepped:Connect(function(dt)
+			local root = getHRP()
+			if not root then return end
+
+			local moveDir = getFlyDirection() * flySpeed
+			if moveDir.Magnitude > 0 then
+				root.CFrame = root.CFrame + (moveDir * dt)
+			end
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+		end)
+	else
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
+	end
+end
+
+-- Fly Input Listeners
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	local k = input.KeyCode
+	if k == Enum.KeyCode.W           then flyKeys.W = true end
+	if k == Enum.KeyCode.A           then flyKeys.A = true end
+	if k == Enum.KeyCode.S           then flyKeys.S = true end
+	if k == Enum.KeyCode.D           then flyKeys.D = true end
+	if k == Enum.KeyCode.Space       then flyKeys.Up = true end
+	if k == Enum.KeyCode.LeftControl then flyKeys.Down = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gpe)
+	if gpe then return end
+	local k = input.KeyCode
+	if k == Enum.KeyCode.W           then flyKeys.W = false end
+	if k == Enum.KeyCode.A           then flyKeys.A = false end
+	if k == Enum.KeyCode.S           then flyKeys.S = false end
+	if k == Enum.KeyCode.D           then flyKeys.D = false end
+	if k == Enum.KeyCode.Space       then flyKeys.Up = false end
+	if k == Enum.KeyCode.LeftControl then flyKeys.Down = false end
+end)
+
+-- Walk On Water
+local function setWalkOnWater(state)
+	walkOnWaterEnabled = state
+	if waterWalkConn then waterWalkConn:Disconnect(); waterWalkConn = nil end
+
+	local hum = getHumanoid()
+	if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, not state) end
+
+	if state then
+		waterWalkConn = RunService.Heartbeat:Connect(function()
+			local char = localPlayer.Character
+			local hrp = getHRP(char)
+			if not hrp then return end
+
+			waterRayParams.FilterDescendantsInstances = { char }
+			local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), waterRayParams)
+			if ray and ray.Material == Enum.Material.Water then
+				local targetY = ray.Position.Y + 2.8
+				if hrp.Position.Y < targetY then
+					hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+					hrp.CFrame = CFrame.new(hrp.Position.X, targetY, hrp.Position.Z)
+				end
+			end
+		end)
+	end
+end
+
+-- =======================================================================
+--   FUN & VISUALS LOGIC
+-- =======================================================================
+local function setRagdoll(state)
+	ragdollEnabled = state
+	local hum = getHumanoid()
+	if not hum then return end
+
+	if state then
+		hum:ChangeState(Enum.HumanoidStateType.Ragdoll)
+		hum.PlatformStand = true
+	else
+		hum.PlatformStand = false
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+end
+
+local function explodeMe()
+	local hrp = getHRP()
+	local hum = getHumanoid()
+	if not hrp then return end
+
+	local exp = Instance.new("Explosion")
+	exp.Position = hrp.Position
+	exp.BlastPressure = 0
+	exp.BlastRadius = 6
+	exp.Parent = Workspace
+
+	task.delay(0.05, function()
+		if hum then hum.Health = 0 end
+	end)
+end
+
+local function isFxTarget(plr)
+	if not plr then return false end
+	if plr == localPlayer then return true end
+	return fxWhitelist[string.lower(plr.Name)] == true
+end
+
+local function cleanFX()
+	for _, conn in ipairs(fxConnections) do
+		conn:Disconnect()
+	end
+	table.clear(fxConnections)
+
+	for _, pe in ipairs(fxEmitters) do
+		if pe and pe.Parent then
+			pe:Destroy()
+		end
+	end
+	table.clear(fxEmitters)
+	table.clear(trackedFxChars)
+end
+
+local function setupCharacterFX(char)
+	if not char then return end
+	local hum = char:WaitForChild("Humanoid", 5)
+	local hrp = char:WaitForChild("HumanoidRootPart", 5) or char:WaitForChild("Torso", 5)
+	if not hum or not hrp then return end
+
+	local jumpPE = Instance.new("ParticleEmitter")
+	jumpPE.Rate = 0
+	jumpPE.Speed = NumberRange.new(6, 12)
+	jumpPE.SpreadAngle = Vector2.new(360, 360)
+	jumpPE.Lifetime = NumberRange.new(0.4, 0.7)
+	jumpPE.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.6),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	jumpPE.Parent = hrp
+	table.insert(fxEmitters, jumpPE)
+
+	local landPE = jumpPE:Clone()
+	landPE.Parent = hrp
+	table.insert(fxEmitters, landPE)
+
+	local fallPE = Instance.new("ParticleEmitter")
+	fallPE.Rate = 0
+	fallPE.Speed = NumberRange.new(8, 14)
+	fallPE.SpreadAngle = Vector2.new(180, 180)
+	fallPE.Acceleration = Vector3.new(0, 15, 0)
+	fallPE.Lifetime = NumberRange.new(0.3, 0.6)
+	fallPE.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.7),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	fallPE.Parent = hrp
+	table.insert(fxEmitters, fallPE)
+
+	trackedFxChars[char] = {
+		hum          = hum,
+		hrp          = hrp,
+		jumpPE       = jumpPE,
+		landPE       = landPE,
+		fallPE       = fallPE,
+		wasGrounded  = true,
+		isJumping    = false,
+		isFalling    = false,
+		prevVelY     = 0,
+		lastJumpTick = 0,
+		lastFallTick = 0,
+		lastLandTick = 0
+	}
+end
+
+local function hookPlayerFX(targetPlr)
+	if not isFxTarget(targetPlr) then return end
+
+	if targetPlr.Character then
+		task.spawn(setupCharacterFX, targetPlr.Character)
+	end
+
+	local charAddedConn = targetPlr.CharacterAdded:Connect(function(char)
+		if fxEnabled then
+			task.spawn(setupCharacterFX, char)
+		end
+	end)
+	table.insert(fxConnections, charAddedConn)
+end
+
+local function setLowGravFX(state)
+	fxEnabled = state
+	cleanFX()
+
+	if state then
+		for _, plr in ipairs(Players:GetPlayers()) do
+			hookPlayerFX(plr)
+		end
+
+		local playerJoinedConn = Players.PlayerAdded:Connect(function(newPlr)
+			if fxEnabled then
+				hookPlayerFX(newPlr)
+			end
+		end)
+		table.insert(fxConnections, playerJoinedConn)
+
+		local monitorConn = RunService.Heartbeat:Connect(function()
+			local now = tick()
+			for char, data in pairs(trackedFxChars) do
+				local hrp = data.hrp
+				local hum = data.hum
+
+				if not hrp or not hum or not hrp.Parent or not hum.Parent or hum.Health <= 0 then
+					trackedFxChars[char] = nil
+				else
+					local velY = hrp.AssemblyLinearVelocity.Y
+					local isGrounded = (hum.FloorMaterial ~= Enum.Material.Air)
+
+					if isGrounded then
+						if not data.wasGrounded then
+							if (now - data.lastLandTick) > 0.2 then
+								data.lastLandTick = now
+								if data.landPE and data.landPE.Parent then
+									data.landPE:Emit(35)
+								end
+							end
+						end
+						data.isJumping = false
+						data.isFalling = false
+					else
+						if data.wasGrounded then
+							if velY > 6 then
+								if (now - data.lastJumpTick) > 0.2 then
+									data.lastJumpTick = now
+									if data.jumpPE and data.jumpPE.Parent then
+										data.jumpPE:Emit(25)
+									end
+								end
+								data.isJumping = true
+								data.isFalling = false
+							else
+								if (now - data.lastFallTick) > 0.3 then
+									data.lastFallTick = now
+									if data.fallPE and data.fallPE.Parent then
+										data.fallPE:Emit(20)
+									end
+								end
+								data.isFalling = true
+								data.isJumping = false
+							end
+						else
+							if velY > 15 and (velY - data.prevVelY > 18) then
+								if (now - data.lastJumpTick) > 0.2 then
+									data.lastJumpTick = now
+									if data.jumpPE and data.jumpPE.Parent then
+										data.jumpPE:Emit(25)
+									end
+								end
+								data.isJumping = true
+								data.isFalling = false
+							elseif velY < -8 and not data.isFalling then
+								if (now - data.lastFallTick) > 0.35 then
+									data.lastFallTick = now
+									if data.fallPE and data.fallPE.Parent then
+										data.fallPE:Emit(20)
+									end
+								end
+								data.isFalling = true
+							end
+						end
+					end
+
+					data.wasGrounded = isGrounded
+					data.prevVelY = velY
+				end
+			end
+		end)
+		table.insert(fxConnections, monitorConn)
+	end
+end
+
+-- Matrix Rain Overlay
+local glyphs = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*/+<>[]{}()\\|"
+local function randGlyph()
+	local idx = math.random(1, #glyphs)
+	return string.sub(glyphs, idx, idx)
+end
+
+local function setMatrix(state)
+	matrixEnabled = state
+	for _, c in pairs(matrixConns) do c:Disconnect() end
+	table.clear(matrixConns)
+
+	if matrixGui then
+		matrixGui:Destroy()
+		matrixGui = nil
+	end
+
+	if not state then return end
+
+	matrixGui = Instance.new("ScreenGui")
+	matrixGui.Name = "MatrixRainOverlay"
+	matrixGui.IgnoreGuiInset = true
+	matrixGui.ResetOnSpawn = false
+	matrixGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	matrixGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+	local columns = 40
+	for i = 1, columns do
+		local lbl = Instance.new("TextLabel")
+		lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.Code
+		lbl.TextColor3 = Color3.fromRGB(120, 255, 120)
+		lbl.TextSize = 14
+		lbl.Text = randGlyph()
+		lbl.Position = UDim2.new(i / columns, -8, math.random(), -200)
+		lbl.Size = UDim2.fromOffset(16, 2000)
+		lbl.TextYAlignment = Enum.TextYAlignment.Top
+		lbl.ZIndex = 0
+		lbl.Parent = matrixGui
+
+		local conn = RunService.Heartbeat:Connect(function(dt)
+			if not lbl or not lbl.Parent then return end
+			local p = lbl.Position
+			local ny = p.Y.Scale + dt * (0.08 + (i % 7) * 0.01)
+			if ny > 1 then ny = -0.1 end
+			lbl.Position = UDim2.new(p.X.Scale, p.X.Offset, ny, p.Y.Offset)
+			if math.random() < 0.15 then
+				lbl.Text = randGlyph()
+			end
+		end)
+		table.insert(matrixConns, conn)
+	end
+end
+
+-- =======================================================================
+--   CORE TARGETING & BOT FUNCTIONS
+-- =======================================================================
+local function getZombies()
+	local folder = Workspace:FindFirstChild("_Zombies")
+		or Workspace:FindFirstChild("Zombies")
+		or Workspace:FindFirstChild("Enemies")
+	if not folder then return {} end
+
+	local list = {}
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("Model") then
+			local hrp = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso")
+			local hum = child:FindFirstChildOfClass("Humanoid")
+			if hrp and (not hum or hum.Health > 0) then
+				table.insert(list, child)
+			end
+		end
+	end
+	return list
+end
+
+local function getNearestZombie()
+	local zombies = getZombies()
+	local hrp = getHRP()
+	if not hrp or #zombies == 0 then return nil end
+
+	local myPos = hrp.Position
+	local nearest, nearestDist = nil, math.huge
+	for _, z in ipairs(zombies) do
+		local zHRP = z:FindFirstChild("HumanoidRootPart") or z:FindFirstChild("Torso")
+		if zHRP then
+			local d = (zHRP.Position - myPos).Magnitude
+			if d < nearestDist then
+				nearestDist = d
+				nearest = z
+			end
+		end
+	end
+	return nearest
+end
+
+local function cancelCurrentTween()
+	if activeTween then
+		activeTween:Cancel()
+		activeTween = nil
+	end
+	local hrp = getHRP()
+	if hrp then
+		hrp.Anchored = false
+	end
+end
+
+local function tweenToZombie(targetZombie)
+	local myHRP = getHRP()
+	local targetHRP = targetZombie and (targetZombie:FindFirstChild("HumanoidRootPart") or targetZombie:FindFirstChild("Torso"))
+	if not myHRP or not targetHRP then return end
+
+	cancelCurrentTween()
+
+	local targetPos = targetHRP.Position + OFFSET
+	local targetCFrame = CFrame.lookAt(targetPos, targetHRP.Position)
+	local distance = (myHRP.Position - targetPos).Magnitude
+	local duration = math.max(0.15, distance / math.max(1, tweenSpeed))
+
+	myHRP.Anchored = true
+	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+	activeTween = TweenService:Create(myHRP, tweenInfo, { CFrame = targetCFrame })
+
+	activeTween.Completed:Connect(function(state)
+		if state == Enum.PlaybackState.Completed or state == Enum.PlaybackState.Cancelled then
+			if myHRP and myHRP.Parent then
+				myHRP.Anchored = false
+			end
+			activeTween = nil
+		end
+	end)
+	activeTween:Play()
+end
+
+local function clearESP()
+	for _, z in ipairs(getZombies()) do
+		local hl = z:FindFirstChild("DevZombieHighlight")
+		if hl then hl:Destroy() end
+	end
+end
+
+-- =======================================================================
+--   HALLOWEEN / TRICK OR TREAT LOGIC
+-- =======================================================================
+local function getHalloweenBuildingFolder()
+	local areas = Workspace:FindFirstChild("Areas")
+	if not areas then return nil end
+	local hw = areas:FindFirstChild("Halloween")
+	if not hw then return nil end
+
+	local tot = hw:FindFirstChild("Haloweem Trick or Treat ") or hw:FindFirstChild("Haloweem Trick or Treat")
+	if not tot then return nil end
+
+	return tot:FindFirstChild("Building")
+end
+
+local function interactWithPrompt(prompt)
+	if not prompt or not prompt.Parent then return end
+
+	if typeof(fireproximityprompt) == "function" then
+		fireproximityprompt(prompt)
+	else
+		pcall(function()
+			prompt:InputHoldBegin()
+			task.wait((prompt.HoldDuration or 0.5) + 0.05)
+			prompt:InputHoldEnd()
+		end)
+	end
+end
+
+local function resolveHouseData(house)
+	local prompt = house:FindFirstChild("TrickOrTreatPrompt", true)
+	if not prompt then
+		prompt = house:FindFirstChildOfClass("ProximityPrompt", true)
+	end
+
+	local tpTarget = nil
+
+	tpTarget = house:FindFirstChild("Meshes/portal_Cube.001 (1)", true)
+
+	if not tpTarget then
+		tpTarget = house:FindFirstChild("Meshes/tt1_tt.003", true)
+	end
+
+	if not tpTarget and house:FindFirstChild("Parts") then
+		for _, child in ipairs(house.Parts:GetDescendants()) do
+			if child:IsA("BasePart") and string.find(child.Name, "portal_Cube") then
+				tpTarget = child
+				break
+			end
+		end
+	end
+
+	if not tpTarget and house:FindFirstChild("Neon") then
+		for _, child in ipairs(house.Neon:GetDescendants()) do
+			if child:IsA("BasePart") and string.find(child.Name, "tt1_tt") then
+				tpTarget = child
+				break
+			end
+		end
+	end
+
+	if not tpTarget and prompt then
+		local parent = prompt.Parent
+		if parent:IsA("BasePart") then
+			tpTarget = parent
+		elseif parent:IsA("Attachment") and parent.Parent:IsA("BasePart") then
+			tpTarget = parent.Parent
+		end
+	end
+
+	if not tpTarget then
+		tpTarget = house.PrimaryPart or house:FindFirstChildOfClass("BasePart", true)
+	end
+
+	return tpTarget, prompt
+end
+
+local function runTrickOrTreatSweep(singleRun)
+	if totLoopRunning and not singleRun then return end
+	totLoopRunning = true
+
+	local buildingFolder = getHalloweenBuildingFolder()
+	if not buildingFolder then
+		window:Notify({
+			title = "Trick or Treat",
+			content = "Building folder could not be found!",
+			duration = 3
+		})
+		totLoopRunning = false
+		return
+	end
+
+	local houses = buildingFolder:GetChildren()
+
+	for index, house in ipairs(houses) do
+		if not autoTotEnabled and not singleRun then break end
+
+		local targetPart, prompt = resolveHouseData(house)
+		local hrp = getHRP()
+
+		if hrp and targetPart and prompt then
+			cancelCurrentTween()
+
+			local targetCFrame = targetPart:IsA("BasePart") and targetPart.CFrame or targetPart:GetPivot()
+			hrp.CFrame = targetCFrame + Vector3.new(0, 3, 0)
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+
+			task.wait(0.3)
+
+			interactWithPrompt(prompt)
+			task.wait(totDelay)
+		end
+	end
+
+	totLoopRunning = false
+end
+
+-- Respawn hooks
+localPlayer.CharacterAdded:Connect(function(char)
+	applyCharacterSettings(char)
+
+	task.wait(0.2)
+	if noclipEnabled then setNoclip(true) end
+	if flyEnabled then setFly(true) end
+	if walkOnWaterEnabled then setWalkOnWater(true) end
+	if ragdollEnabled then setRagdoll(true) end
+end)
+
+-- =======================================================================
+--   RUNSERVICE RENDER LOOPS
+-- =======================================================================
+RunService.RenderStepped:Connect(function()
+	if tracerEnabled then
+		if not tracerBeam then
+			tracerBeam = Instance.new("Beam")
+			tracerBeam.Name = "TracerBeam"
+			tracerBeam.Color = ColorSequence.new(Color3.fromRGB(255, 45, 45))
+			tracerBeam.Width0 = 0.1
+			tracerBeam.Width1 = 0.1
+			tracerBeam.FaceCamera = true
+			tracerBeam.LightEmission = 1
+			tracerBeam.Parent = camera
+		end
+
+		local myHRP = getHRP()
+		local nearest = getNearestZombie()
+
+		if myHRP and nearest then
+			local targetHRP = nearest:FindFirstChild("HumanoidRootPart") or nearest:FindFirstChild("Torso")
+			if targetHRP then
+				if not playerAttachment or playerAttachment.Parent ~= myHRP then
+					playerAttachment = Instance.new("Attachment", myHRP)
+				end
+				local targetAtt = targetHRP:FindFirstChild("TargetAtt") or Instance.new("Attachment", targetHRP)
+				targetAtt.Name = "TargetAtt"
+
+				tracerBeam.Attachment0 = playerAttachment
+				tracerBeam.Attachment1 = targetAtt
+				tracerBeam.Enabled = true
+			else
+				if tracerBeam then tracerBeam.Enabled = false end
+			end
+		else
+			if tracerBeam then tracerBeam.Enabled = false end
+		end
+	elseif tracerBeam then
+		tracerBeam.Enabled = false
+	end
+
+	if espEnabled then
+		for _, z in ipairs(getZombies()) do
+			if not z:FindFirstChild("DevZombieHighlight") then
+				local hl = Instance.new("Highlight")
+				hl.Name = "DevZombieHighlight"
+				hl.FillColor = Color3.fromRGB(255, 45, 45)
+				hl.FillTransparency = 0.5
+				hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+				hl.OutlineTransparency = 0.2
+				hl.Adornee = z
+				hl.Parent = z
+			end
+		end
+	end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+	if infJumpEnabled then
+		local hum = getHumanoid()
+		if hum and hum.Parent then
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+			hum:ChangeState(Enum.HumanoidStateType.Seated)
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
+	end
+end)
+
+-- =======================================================================
+--   BUILD UI (RAYFIELD GEN2 API)
+-- =======================================================================
+local window = Rayfield:CreateWindow({
+	name = "OP HUB",
+	subtitle = "OP HUB",
+	sidebarLayout = true,
+	theme = "Rose",
+	showText = "OP HUB",
+	ShowText = "OP HUB"
+})
+
+window:Notify({
+	title = "OP HUB",
+	content = "OP HUB loaded successfully.",
+	duration = 4
+})
+
+-- -----------------------------------------------------------------------
+--   TAB: HALLOWEEN (TRICK OR TREAT)
+-- -----------------------------------------------------------------------
+local halloweenTab = window:CreateTab({
+	name = "Halloween",
+	icon = 0
+})
+
+halloweenTab:CreateToggle({
+	name = "Auto Trick or Treat (Loop)",
+	currentValue = false,
+	callback = function(value)
+		autoTotEnabled = value
+		if autoTotEnabled then
+			task.spawn(function()
+				while autoTotEnabled do
+					runTrickOrTreatSweep(false)
+					task.wait(1)
+				end
+			end)
+		end
+	end
+})
+
+halloweenTab:CreateButton({
+	name = "Trick or Treat All Houses (Once)",
+	callback = function()
+		task.spawn(function()
+			runTrickOrTreatSweep(true)
+		end)
+	end
+})
+
+halloweenTab:CreateSlider({
+	name = "House Delay",
+	range = { 0.5, 5 },
+	increment = 0.1,
+	suffix = " s",
+	currentValue = 1.5,
+	callback = function(val)
+		totDelay = val
+	end
+})
+
+-- -----------------------------------------------------------------------
+--   TAB: ZOMBIES
+-- -----------------------------------------------------------------------
+local zombiesTab = window:CreateTab({
+	name = "Zombies",
+	icon = 0
+})
+
+local zombieStat = zombiesTab:CreateStat({
+	name = "Zombies on Map",
+	value = 0
+})
+
+zombiesTab:CreateDivider()
+
+zombiesTab:CreateButton({
+	name = "Tween to Nearest Zombie",
+	callback = function()
+		local n = getNearestZombie()
+		if n then tweenToZombie(n) end
+	end
+})
+
+zombiesTab:CreateButton({
+	name = "Cancel Active Motion",
+	callback = function()
+		cancelCurrentTween()
+	end
+})
+
+zombiesTab:CreateSlider({
+	name = "Tween Speed",
+	range = { 30, 250 },
+	increment = 5,
+	suffix = " studs/s",
+	currentValue = 100,
+	callback = function(val)
+		tweenSpeed = val
+	end
+})
+
+zombiesTab:CreateDivider()
+
+zombiesTab:CreateToggle({
+	name = "Entity Highlight (ESP)",
+	currentValue = false,
+	callback = function(value)
+		espEnabled = value
+		if not espEnabled then clearESP() end
+	end
+})
+
+zombiesTab:CreateToggle({
+	name = "Target Tracer Beam",
+	currentValue = false,
+	callback = function(value)
+		tracerEnabled = value
+	end
+})
+
+-- -----------------------------------------------------------------------
+--   TAB: PLAYER
+-- -----------------------------------------------------------------------
+local playerTab = window:CreateTab({
+	name = "Player",
+	icon = 0
+})
+
+playerTab:CreateSlider({
+	name = "WalkSpeed",
+	range = { 16, 200 },
+	increment = 1,
+	suffix = " speed",
+	currentValue = 16,
+	callback = function(val)
+		currentWalkSpeed = val
+		local hum = getHumanoid()
+		if hum then hum.WalkSpeed = val end
+	end
+})
+
+playerTab:CreateSlider({
+	name = "Jump Power",
+	range = { 0, 300 },
+	increment = 5,
+	suffix = " power",
+	currentValue = 50,
+	callback = function(val)
+		currentJumpPower = val
+		local hum = getHumanoid()
+		if hum then
+			hum.UseJumpPower = true
+			hum.JumpPower = val
+		end
+	end
+})
+
+playerTab:CreateSlider({
+	name = "World Gravity",
+	range = { 0, 500 },
+	increment = 10,
+	suffix = " grav",
+	currentValue = Workspace.Gravity,
+	callback = function(val)
+		currentGravity = val
+		Workspace.Gravity = val
+	end
+})
+
+playerTab:CreateSlider({
+	name = "Camera FOV",
+	range = { 40, 120 },
+	increment = 1,
+	suffix = " deg",
+	currentValue = camera.FieldOfView,
+	callback = function(val)
+		camera.FieldOfView = val
+	end
+})
+
+playerTab:CreateDivider()
+
+playerTab:CreateToggle({
+	name = "Infinite Jump",
+	currentValue = false,
+	callback = function(value)
+		infJumpEnabled = value
+	end
+})
+
+playerTab:CreateToggle({
+	name = "Anti-AFK Protection",
+	currentValue = false,
+	callback = function(value)
+		antiAfkEnabled = value
+		if antiAfkEnabled then
+			antiAfkConn = localPlayer.Idled:Connect(function()
+				pcall(function()
+					VirtualUser:CaptureController()
+					VirtualUser:ClickButton2(Vector2.zero)
+				end)
+			end)
+		else
+			if antiAfkConn then
+				antiAfkConn:Disconnect()
+				antiAfkConn = nil
+			end
+		end
+	end
+})
+
+playerTab:CreateToggle({
+	name = "Fullbright / Clear Fog",
+	currentValue = false,
+	callback = function(value)
+		fullbrightEnabled = value
+		if fullbrightEnabled then
+			Lighting.Brightness = 2
+			Lighting.ClockTime = 14
+			Lighting.FogEnd = 100000
+			Lighting.GlobalShadows = false
+		else
+			Lighting.Brightness = 1
+			Lighting.GlobalShadows = true
+		end
+	end
+})
+
+playerTab:CreateButton({
+	name = "Respawn Character",
+	callback = function()
+		local hum = getHumanoid()
+		if hum then hum.Health = 0 end
+	end
+})
+
+-- -----------------------------------------------------------------------
+--   TAB: MOVEMENT
+-- -----------------------------------------------------------------------
+local movementTab = window:CreateTab({
+	name = "Movement",
+	icon = 0
+})
+
+movementTab:CreateToggle({
+	name = "Fly Mode",
+	currentValue = false,
+	callback = function(value)
+		setFly(value)
+	end
+})
+
+movementTab:CreateSlider({
+	name = "Fly Speed",
+	range = { 10, 200 },
+	increment = 5,
+	suffix = " speed",
+	currentValue = 60,
+	callback = function(val)
+		flySpeed = val
+	end
+})
+
+movementTab:CreateDivider()
+
+movementTab:CreateToggle({
+	name = "Noclip",
+	currentValue = false,
+	callback = function(value)
+		setNoclip(value)
+	end
+})
+
+movementTab:CreateToggle({
+	name = "Walk On Water",
+	currentValue = false,
+	callback = function(value)
+		setWalkOnWater(value)
+	end
+})
+
+-- -----------------------------------------------------------------------
+--   TAB: FUN & FX
+-- -----------------------------------------------------------------------
+local funTab = window:CreateTab({
+	name = "Fun / FX",
+	icon = 0
+})
+
+funTab:CreateToggle({
+	name = "Ragdoll Mode",
+	currentValue = false,
+	callback = function(value)
+		setRagdoll(value)
+	end
+})
+
+funTab:CreateToggle({
+	name = "Jump & Fall FX (Synced)",
+	currentValue = false,
+	callback = function(value)
+		setLowGravFX(value)
+	end
+})
+
+funTab:CreateToggle({
+	name = "Matrix Rain Overlay",
+	currentValue = false,
+	callback = function(value)
+		setMatrix(value)
+	end
+})
+
+funTab:CreateDivider()
+
+funTab:CreateButton({
+	name = "Explode Me",
+	callback = function()
+		explodeMe()
+	end
+})
+
+-- -----------------------------------------------------------------------
+--   TAB: TPS
+-- -----------------------------------------------------------------------
+local tpsTab = window:CreateTab({
+	name = "TPs",
+	icon = 0
+})
+
+local tpTweenSpeed = 100
+
+tpsTab:CreateSlider({
+	name = "TP Tween Speed",
+	range = { 20, 600 },
+	increment = 10,
+	suffix = " studs/s",
+	currentValue = 100,
+	callback = function(val)
+		tpTweenSpeed = val
+	end
+})
+
+tpsTab:CreateButton({
+	name = "Cancel Active Motion",
+	callback = function()
+		cancelCurrentTween()
+	end
+})
+
+tpsTab:CreateDivider()
+
+local CustomTargets = {
+	["Shipyard"] = function(area)
+		local npc = area:FindFirstChild("Steve", true)
+		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
+	end,
+	["Shopping Mall"] = function(area)
+		local spawns = area:FindFirstChild("ShoppingMallCarSpawns", true)
+		if spawns then
+			return spawns:FindFirstChildOfClass("BasePart") or spawns:FindFirstChild("Part")
+		end
+	end,
+	["The Mines"] = function(area)
+		local npc = area:FindFirstChild("Mining Supervisor", true)
+		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
+	end,
+	["Power Plant"] = function(area)
+		local npc = area:FindFirstChild("Mad Scientist", true)
+		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
+	end,
+	["Business Bay"] = function(area)
+		local npc = area:FindFirstChild("Michael", true)
+		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("UpperTorso") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
+	end,
+	["Junk Yard"] = function(area)
+		local npc = area:FindFirstChild("Billy", true)
+		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("UpperTorso") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
+	end,
+	["Lucky Beach"] = function(area)
+		local npc = area:FindFirstChild("Sam", true)
+		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
+	end,
+	["Carnanval"] = function(area)
+		local npcFolder = area:FindFirstChild("NPC")
+		local monkey = npcFolder and npcFolder:FindFirstChild("Circus Monkey") or area:FindFirstChild("Circus Monkey", true)
+		return monkey and (monkey:FindFirstChild("HumanoidRootPart") or monkey:FindFirstChild("UpperTorso") or monkey:FindFirstChild("Torso") or monkey.PrimaryPart)
+	end
+}
+
+local function resolveTarget(areaFolder)
+	local customFinder = CustomTargets[areaFolder.Name]
+	if customFinder then
+		local target = customFinder(areaFolder)
+		if target then return target end
+	end
+
+	local box = areaFolder:FindFirstChild("Lost and Found Box", true)
+	if box then
+		local cube = box:FindFirstChild("Meshes/LNF_Cube", true)
+		if cube and cube:IsA("BasePart") then
+			return cube
+		end
+	end
+
+	return nil
+end
+
+local function tweenToDestination(targetCFrame, destinationName)
+	local myHRP = getHRP()
+	if not myHRP then return end
+
+	cancelCurrentTween()
+
+	local targetPos = targetCFrame.Position + Vector3.new(0, 3, 0)
+	local destinationCFrame = CFrame.new(targetPos)
+	local distance = (myHRP.Position - targetPos).Magnitude
+	local duration = math.max(0.15, distance / math.max(1, tpTweenSpeed))
+
+	myHRP.Anchored = true
+	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+	activeTween = TweenService:Create(myHRP, tweenInfo, { CFrame = destinationCFrame })
+
+	activeTween.Completed:Connect(function(state)
+		if state == Enum.PlaybackState.Completed or state == Enum.PlaybackState.Cancelled then
+			if myHRP and myHRP.Parent then
+				myHRP.Anchored = false
+			end
+			activeTween = nil
+			if state == Enum.PlaybackState.Completed then
+				window:Notify({
+					title = "Arrived",
+					content = "Reached " .. destinationName,
+					duration = 3
+				})
+			end
+		end
+	end)
+
+	activeTween:Play()
+	window:Notify({
+		title = "Tweening",
+		content = "Traveling to " .. destinationName .. "...",
+		duration = 2
+	})
+end
+
+local function buildTPs()
+	local areasFolder = Workspace:FindFirstChild("Areas")
+	if not areasFolder then
+		window:Notify({
+			title = "TPs Warning",
+			content = "Workspace.Areas folder not found.",
+			duration = 4
+		})
+		return
+	end
+
+	for _, areaFolder in ipairs(areasFolder:GetChildren()) do
+		tpsTab:CreateButton({
+			name = "TP " .. areaFolder.Name,
+			callback = function()
+				local target = resolveTarget(areaFolder)
+				if target then
+					local targetCFrame = nil
+					if target:IsA("BasePart") then
+						targetCFrame = target.CFrame
+					elseif target:IsA("Model") then
+						targetCFrame = target:GetPivot()
+					end
+
+					if targetCFrame then
+						tweenToDestination(targetCFrame, areaFolder.Name)
+					end
+				else
+					window:Notify({
+						title = "Teleport Failed",
+						content = "Could not find destination for " .. areaFolder.Name,
+						duration = 3
+					})
+				end
+			end
+		})
+	end
+end
+
+buildTPs()
+
+-- =======================================================================
+--   DYNAMIC ENTITY COUNTER
+-- =======================================================================
+task.spawn(function()
+	while true do
+		local count = #getZombies()
+		pcall(function()
+			zombieStat:Set(count)
+		end)
+		task.wait(0.5)
+	end
+end)
+
+-- Toggle Menu Keybind (Right Control)
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
+		window:ToggleHide()
+	end
+end)
