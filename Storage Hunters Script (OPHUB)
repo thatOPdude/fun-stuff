@@ -1,25 +1,24 @@
 -- =======================================================================
 --   🎃 LOAD HALLOW UI LIBRARY
 -- =======================================================================
-local Hallow = loadstring(game:HttpGet("https://raw.githubusercontent.com/thatOPdude/fun-stuff/refs/heads/main/HallowLib.lua"))()
+local Hallow = loadstring(game:HttpGet("https://raw.githubusercontent.com/thatOPdude/fun-stuff/refs/heads/main/HallowLib.lua?nocache=" .. tostring(tick())))()
 
 -- =======================================================================
 --   SERVICES
 -- =======================================================================
-local TweenService         = game:GetService("TweenService")
-local Players              = game:GetService("Players")
-local Workspace            = game:GetService("Workspace")
-local RunService           = game:GetService("RunService")
-local Lighting             = game:GetService("Lighting")
-local UserInputService     = game:GetService("UserInputService")
-local VirtualUser          = game:GetService("VirtualUser")
-local ReplicatedStorage    = game:GetService("ReplicatedStorage")
+local TweenService           = game:GetService("TweenService")
+local Players                = game:GetService("Players")
+local Workspace              = game:GetService("Workspace")
+local RunService             = game:GetService("RunService")
+local Lighting               = game:GetService("Lighting")
+local UserInputService       = game:GetService("UserInputService")
+local VirtualUser            = game:GetService("VirtualUser")
+local ReplicatedStorage      = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local localPlayer = Players.LocalPlayer
 local camera      = Workspace.CurrentCamera
 
--- Parent GUI reference for internal lookups
 local parentGui = (typeof(gethui) == "function" and gethui()) 
 	or game:GetService("CoreGui"):FindFirstChild("RobloxGui") 
 	or localPlayer:WaitForChild("PlayerGui")
@@ -27,7 +26,6 @@ local parentGui = (typeof(gethui) == "function" and gethui())
 -- =======================================================================
 --   STATE CONFIGURATION
 -- =======================================================================
--- Combat / Target State
 local tweenSpeed        = 100
 local OFFSET            = Vector3.new(0, 3, 4)
 local activeTween       = nil
@@ -38,51 +36,36 @@ local antiAfkConn       = nil
 local playerAttachment  = nil
 local tracerBeam        = nil
 
--- Player & Movement State
 local currentWalkSpeed    = 16
 local currentJumpPower    = 50
 local currentGravity      = Workspace.Gravity
 local infJumpEnabled      = false
 local fullbrightEnabled   = false
 
--- Noclip State
 local noclipEnabled       = false
 local noclipConn          = nil
 
--- Fly State
 local flyEnabled          = false
 local flySpeed            = 60
 local flyConn             = nil
 local flyKeys             = { W = false, A = false, S = false, D = false, Up = false, Down = false }
 
--- Walk on Water State
 local walkOnWaterEnabled  = false
 local waterWalkConn       = nil
 local waterRayParams      = RaycastParams.new()
 waterRayParams.FilterType = Enum.RaycastFilterType.Exclude
 
--- Fun / FX State
 local ragdollEnabled      = false
-local fxEnabled           = false
-local fxConnections       = {}
-local fxEmitters          = {}
-local trackedFxChars      = {}
-
--- Whitelist for Jump & Fall FX targets
-local fxWhitelist = {
-	["potatosquatshorts"] = true,
-	["bv013346"]           = true
-}
-
--- Matrix Rain State
-local matrixEnabled       = false
-local matrixGui           = nil
-local matrixConns         = {}
 
 -- Halloween / Trick or Treat State
 local autoTotEnabled      = false
 local totLoopRunning      = false
 local totDelay            = 1.5
+local checkLitOnly        = false
+local unlitHouses         = {}
+local currentKnockingHouse = nil
+local minHouseY           = 3
+local HOUSE_COOLDOWN      = 240
 
 -- Halloween / Auto Dig Grave State
 local autoDigEnabled      = false
@@ -98,13 +81,22 @@ local autoStartGarages = {
 }
 
 -- =======================================================================
+--   EXACT 45-HOUSE ORDER SEQUENCE
+-- =======================================================================
+local houseOrder = {
+	18, 13, 20, 21, 24, "Trick or Treat House", 30, 49, 8, 17,
+	7, 26, 11, 35, 27, 4, 37, 19, 3, 15, 40, 39, 38, 41, 48,
+	33, 47, 25, 28, 23, 22, 34, 12, 31, 42, 50, 32, 36, 45,
+	2, 9, 46, 16, 14, "Halloween Hut"
+}
+
+-- =======================================================================
 --   CREATE MAIN WINDOW
 -- =======================================================================
 local window = Hallow:CreateWindow({
 	Title = "OP HUB"
 })
 
--- Safe notification wrapper so both window:Notify and Hallow:Notify work
 function window:Notify(cfg)
 	Hallow:Notify({
 		Title = cfg.Title or cfg.title or "OP HUB",
@@ -116,7 +108,7 @@ end
 window:Notify({
 	title = "OP HUB",
 	content = "OP HUB loaded successfully.",
-	duration = 4
+	duration = 3.5
 })
 
 -- =======================================================================
@@ -145,12 +137,8 @@ local function interactWithPrompt(prompt)
 	if not prompt or not prompt.Parent then return end
 
 	if typeof(fireproximityprompt) == "function" then
-		pcall(function()
-			fireproximityprompt(prompt, 1, true)
-		end)
-		pcall(function()
-			fireproximityprompt(prompt)
-		end)
+		pcall(function() fireproximityprompt(prompt, 1, true) end)
+		pcall(function() fireproximityprompt(prompt) end)
 	else
 		pcall(function()
 			prompt:InputHoldBegin()
@@ -158,6 +146,34 @@ local function interactWithPrompt(prompt)
 			prompt:InputHoldEnd()
 		end)
 	end
+end
+
+local function cancelCurrentTween()
+	if activeTween then
+		activeTween:Cancel()
+		activeTween = nil
+	end
+	local hrp = getHRP()
+	if hrp then
+		hrp.Anchored = false
+	end
+end
+
+local function getHouseCFrame(house)
+	if not house then return nil end
+	if house:IsA("BasePart") then return house.CFrame end
+	if house:IsA("Model") then
+		local pp = house.PrimaryPart
+		if pp then return pp.CFrame end
+		local cf, _ = house:GetBoundingBox()
+		if cf and cf.Position.Magnitude > 1 then
+			return cf
+		end
+		local p = house:FindFirstChildWhichIsA("BasePart", true)
+		if p then return p.CFrame end
+		return house:GetPivot()
+	end
+	return nil
 end
 
 -- =======================================================================
@@ -170,36 +186,27 @@ local promptConns            = {}
 local function setInstantPrompts(state)
 	instaRepairEnabled = state
 
-	for _, c in ipairs(promptConns) do
-		c:Disconnect()
-	end
+	for _, c in ipairs(promptConns) do c:Disconnect() end
 	table.clear(promptConns)
 
 	if state then
 		for _, desc in ipairs(Workspace:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") then
-				if originalHoldDurations[desc] == nil then
-					originalHoldDurations[desc] = desc.HoldDuration
-				end
+				if originalHoldDurations[desc] == nil then originalHoldDurations[desc] = desc.HoldDuration end
 				desc.HoldDuration = 0
 			end
 		end
 
-		local shownConn = ProximityPromptService.PromptShown:Connect(function(prompt)
+		table.insert(promptConns, ProximityPromptService.PromptShown:Connect(function(prompt)
 			if not instaRepairEnabled or not prompt then return end
-			if originalHoldDurations[prompt] == nil then
-				originalHoldDurations[prompt] = prompt.HoldDuration
-			end
+			if originalHoldDurations[prompt] == nil then originalHoldDurations[prompt] = prompt.HoldDuration end
 			prompt.HoldDuration = 0
-		end)
-		table.insert(promptConns, shownConn)
+		end))
 
-		local holdBeganConn = ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+		table.insert(promptConns, ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
 			if not instaRepairEnabled or not prompt then return end
-
 			if typeof(fireproximityprompt) == "function" then
 				pcall(function() fireproximityprompt(prompt, 1, true) end)
-				pcall(function() fireproximityprompt(prompt, 0, true) end)
 				pcall(function() fireproximityprompt(prompt) end)
 			else
 				pcall(function()
@@ -208,30 +215,21 @@ local function setInstantPrompts(state)
 					prompt:InputHoldEnd()
 				end)
 			end
-		end)
-		table.insert(promptConns, holdBeganConn)
+		end))
 
-		local descConn = Workspace.DescendantAdded:Connect(function(desc)
+		table.insert(promptConns, Workspace.DescendantAdded:Connect(function(desc)
 			if desc:IsA("ProximityPrompt") then
-				if originalHoldDurations[desc] == nil then
-					originalHoldDurations[desc] = desc.HoldDuration
-				end
+				if originalHoldDurations[desc] == nil then originalHoldDurations[desc] = desc.HoldDuration end
 				desc.HoldDuration = 0
 			end
-		end)
-		table.insert(promptConns, descConn)
-
-		print("[InstaRepair] Enabled! All prompts will now complete instantly on tap.")
+		end))
 	else
 		for prompt, origDuration in pairs(originalHoldDurations) do
 			if prompt and prompt.Parent then
-				pcall(function()
-					prompt.HoldDuration = origDuration
-				end)
+				pcall(function() prompt.HoldDuration = origDuration end)
 			end
 		end
 		table.clear(originalHoldDurations)
-		print("[InstaRepair] Disabled. Restored default hold durations.")
 	end
 end
 
@@ -240,10 +238,7 @@ end
 -- =======================================================================
 local function getGarageEnterPrompt(garageNum)
 	local debris = Workspace:FindFirstChild("_Debris")
-	local garages = debris and debris:FindFirstChild("Garages")
-	if not garages then
-		garages = Workspace:FindFirstChild("Garages", true)
-	end
+	local garages = (debris and debris:FindFirstChild("Garages")) or Workspace:FindFirstChild("Garages", true)
 	if not garages then return nil, nil end
 
 	local garage = garages:FindFirstChild("Halloween Garage " .. tostring(garageNum))
@@ -261,14 +256,12 @@ task.spawn(function()
 		for garageNum = 1, 4 do
 			if autoStartGarages[garageNum] then
 				local prompt, pPart = getGarageEnterPrompt(garageNum)
-
 				if prompt and prompt.Enabled and pPart then
 					local hrp = getHRP()
 					if hrp and (hrp.Position - pPart.Position).Magnitude > (prompt.MaxActivationDistance or 10) then
 						hrp.CFrame = pPart.CFrame + Vector3.new(0, 3, 0)
 						task.wait(0.2)
 					end
-
 					interactWithPrompt(prompt)
 					task.wait(0.5)
 				end
@@ -279,484 +272,12 @@ task.spawn(function()
 end)
 
 -- =======================================================================
---   MOVEMENT / PHYSICS LOGIC
+--   HALLOWEEN / TRICK OR TREAT (ALWAYS TELEPORTS & STREAMING SAFE)
 -- =======================================================================
-local function setNoclip(state)
-	noclipEnabled = state
-	if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
-
-	if state then
-		noclipConn = RunService.Stepped:Connect(function()
-			local char = localPlayer.Character
-			if not char then return end
-			for _, part in ipairs(char:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.CanCollide = false
-				end
-			end
-		end)
-	end
-end
-
-local function getFlyDirection()
-	local cf = camera.CFrame
-	local dir = Vector3.zero
-	if flyKeys.W    then dir += cf.LookVector end
-	if flyKeys.S    then dir -= cf.LookVector end
-	if flyKeys.A    then dir -= cf.RightVector end
-	if flyKeys.D    then dir += cf.RightVector end
-	if flyKeys.Up   then dir += Vector3.new(0, 1, 0) end
-	if flyKeys.Down then dir -= Vector3.new(0, 1, 0) end
-
-	if dir.Magnitude > 0 then
-		dir = dir.Unit
-	end
-	return dir
-end
-
-local function setFly(state)
-	flyEnabled = state
-	if flyConn then flyConn:Disconnect(); flyConn = nil end
-
-	local hum = getHumanoid()
-	local hrp = getHRP()
-
-	if state then
-		if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
-		if hrp then
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			hrp.AssemblyAngularVelocity = Vector3.zero
-		end
-
-		flyConn = RunService.RenderStepped:Connect(function(dt)
-			local root = getHRP()
-			if not root then return end
-
-			local moveDir = getFlyDirection() * flySpeed
-			if moveDir.Magnitude > 0 then
-				root.CFrame = root.CFrame + (moveDir * dt)
-			end
-			root.AssemblyLinearVelocity = Vector3.zero
-			root.AssemblyAngularVelocity = Vector3.zero
-		end)
-	else
-		if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
-	end
-end
-
-UserInputService.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	local k = input.KeyCode
-	if k == Enum.KeyCode.W           then flyKeys.W = true end
-	if k == Enum.KeyCode.A           then flyKeys.A = true end
-	if k == Enum.KeyCode.S           then flyKeys.S = true end
-	if k == Enum.KeyCode.D           then flyKeys.D = true end
-	if k == Enum.KeyCode.Space       then flyKeys.Up = true end
-	if k == Enum.KeyCode.LeftControl then flyKeys.Down = true end
-end)
-
-UserInputService.InputEnded:Connect(function(input, gpe)
-	if gpe then return end
-	local k = input.KeyCode
-	if k == Enum.KeyCode.W           then flyKeys.W = false end
-	if k == Enum.KeyCode.A           then flyKeys.A = false end
-	if k == Enum.KeyCode.S           then flyKeys.S = false end
-	if k == Enum.KeyCode.D           then flyKeys.D = false end
-	if k == Enum.KeyCode.Space       then flyKeys.Up = false end
-	if k == Enum.KeyCode.LeftControl then flyKeys.Down = false end
-end)
-
-local function setWalkOnWater(state)
-	walkOnWaterEnabled = state
-	if waterWalkConn then waterWalkConn:Disconnect(); waterWalkConn = nil end
-
-	local hum = getHumanoid()
-	if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, not state) end
-
-	if state then
-		waterWalkConn = RunService.Heartbeat:Connect(function()
-			local char = localPlayer.Character
-			local hrp = getHRP(char)
-			if not hrp then return end
-
-			waterRayParams.FilterDescendantsInstances = { char }
-			local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), waterRayParams)
-			if ray and ray.Material == Enum.Material.Water then
-				local targetY = ray.Position.Y + 2.8
-				if hrp.Position.Y < targetY then
-					hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
-					hrp.CFrame = CFrame.new(hrp.Position.X, targetY, hrp.Position.Z)
-				end
-			end
-		end)
-	end
-end
-
--- =======================================================================
---   FUN & VISUALS LOGIC
--- =======================================================================
-local function setRagdoll(state)
-	ragdollEnabled = state
-	local hum = getHumanoid()
-	if not hum then return end
-
-	if state then
-		hum:ChangeState(Enum.HumanoidStateType.Ragdoll)
-		hum.PlatformStand = true
-	else
-		hum.PlatformStand = false
-		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-	end
-end
-
-local function explodeMe()
-	local hrp = getHRP()
-	local hum = getHumanoid()
-	if not hrp then return end
-
-	local exp = Instance.new("Explosion")
-	exp.Position = hrp.Position
-	exp.BlastPressure = 0
-	exp.BlastRadius = 6
-	exp.Parent = Workspace
-
-	task.delay(0.05, function()
-		if hum then hum.Health = 0 end
-	end)
-end
-
-local function isFxTarget(plr)
-	if not plr then return false end
-	if plr == localPlayer then return true end
-	return fxWhitelist[string.lower(plr.Name)] == true
-end
-
-local function cleanFX()
-	for _, conn in ipairs(fxConnections) do
-		conn:Disconnect()
-	end
-	table.clear(fxConnections)
-
-	for _, pe in ipairs(fxEmitters) do
-		if pe and pe.Parent then
-			pe:Destroy()
-		end
-	end
-	table.clear(fxEmitters)
-	table.clear(trackedFxChars)
-end
-
-local function setupCharacterFX(char)
-	if not char then return end
-	local hum = char:WaitForChild("Humanoid", 5)
-	local hrp = char:WaitForChild("HumanoidRootPart", 5) or char:WaitForChild("Torso", 5)
-	if not hum or not hrp then return end
-
-	local jumpPE = Instance.new("ParticleEmitter")
-	jumpPE.Rate = 0
-	jumpPE.Speed = NumberRange.new(6, 12)
-	jumpPE.SpreadAngle = Vector2.new(360, 360)
-	jumpPE.Lifetime = NumberRange.new(0.4, 0.7)
-	jumpPE.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.6),
-		NumberSequenceKeypoint.new(1, 0)
-	})
-	jumpPE.Parent = hrp
-	table.insert(fxEmitters, jumpPE)
-
-	local landPE = jumpPE:Clone()
-	landPE.Parent = hrp
-	table.insert(fxEmitters, landPE)
-
-	local fallPE = Instance.new("ParticleEmitter")
-	fallPE.Rate = 0
-	fallPE.Speed = NumberRange.new(8, 14)
-	fallPE.SpreadAngle = Vector2.new(180, 180)
-	fallPE.Acceleration = Vector3.new(0, 15, 0)
-	fallPE.Lifetime = NumberRange.new(0.3, 0.6)
-	fallPE.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.7),
-		NumberSequenceKeypoint.new(1, 0)
-	})
-	fallPE.Parent = hrp
-	table.insert(fxEmitters, fallPE)
-
-	trackedFxChars[char] = {
-		hum          = hum,
-		hrp          = hrp,
-		jumpPE       = jumpPE,
-		landPE       = landPE,
-		fallPE       = fallPE,
-		wasGrounded  = true,
-		isJumping    = false,
-		isFalling    = false,
-		prevVelY     = 0,
-		lastJumpTick = 0,
-		lastFallTick = 0,
-		lastLandTick = 0
-	}
-end
-
-local function hookPlayerFX(targetPlr)
-	if not isFxTarget(targetPlr) then return end
-
-	if targetPlr.Character then
-		task.spawn(setupCharacterFX, targetPlr.Character)
-	end
-
-	local charAddedConn = targetPlr.CharacterAdded:Connect(function(char)
-		if fxEnabled then
-			task.spawn(setupCharacterFX, char)
-		end
-	end)
-	table.insert(fxConnections, charAddedConn)
-end
-
-local function setLowGravFX(state)
-	fxEnabled = state
-	cleanFX()
-
-	if state then
-		for _, plr in ipairs(Players:GetPlayers()) do
-			hookPlayerFX(plr)
-		end
-
-		local playerJoinedConn = Players.PlayerAdded:Connect(function(newPlr)
-			if fxEnabled then
-				hookPlayerFX(newPlr)
-			end
-		end)
-		table.insert(fxConnections, playerJoinedConn)
-
-		local monitorConn = RunService.Heartbeat:Connect(function()
-			local now = tick()
-			for char, data in pairs(trackedFxChars) do
-				local hrp = data.hrp
-				local hum = data.hum
-
-				if not hrp or not hum or not hrp.Parent or not hum.Parent or hum.Health <= 0 then
-					trackedFxChars[char] = nil
-				else
-					local velY = hrp.AssemblyLinearVelocity.Y
-					local isGrounded = (hum.FloorMaterial ~= Enum.Material.Air)
-
-					if isGrounded then
-						if not data.wasGrounded then
-							if (now - data.lastLandTick) > 0.2 then
-								data.lastLandTick = now
-								if data.landPE and data.landPE.Parent then
-									data.landPE:Emit(35)
-								end
-							end
-						end
-						data.isJumping = false
-						data.isFalling = false
-					else
-						if data.wasGrounded then
-							if velY > 6 then
-								if (now - data.lastJumpTick) > 0.2 then
-									data.lastJumpTick = now
-									if data.jumpPE and data.jumpPE.Parent then
-										data.jumpPE:Emit(25)
-									end
-								end
-								data.isJumping = true
-								data.isFalling = false
-							else
-								if (now - data.lastFallTick) > 0.3 then
-									data.lastFallTick = now
-									if data.fallPE and data.fallPE.Parent then
-										data.fallPE:Emit(20)
-									end
-								end
-								data.isFalling = true
-								data.isJumping = false
-							end
-						else
-							if velY > 15 and (velY - data.prevVelY > 18) then
-								if (now - data.lastJumpTick) > 0.2 then
-									data.lastJumpTick = now
-									if data.jumpPE and data.jumpPE.Parent then
-										data.jumpPE:Emit(25)
-									end
-								end
-								data.isJumping = true
-								data.isFalling = false
-							elseif velY < -8 and not data.isFalling then
-								if (now - data.lastFallTick) > 0.35 then
-									data.lastFallTick = now
-									if data.fallPE and data.fallPE.Parent then
-										data.fallPE:Emit(20)
-									end
-								end
-								data.isFalling = true
-							end
-						end
-					end
-
-					data.wasGrounded = isGrounded
-					data.prevVelY = velY
-				end
-			end
-		end)
-		table.insert(fxConnections, monitorConn)
-	end
-end
-
--- Matrix Rain Overlay
-local glyphs = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*/+<>[]{}()\\|"
-local function randGlyph()
-	local idx = math.random(1, #glyphs)
-	return string.sub(glyphs, idx, idx)
-end
-
-local function setMatrix(state)
-	matrixEnabled = state
-	for _, c in pairs(matrixConns) do c:Disconnect() end
-	table.clear(matrixConns)
-
-	if matrixGui then
-		matrixGui:Destroy()
-		matrixGui = nil
-	end
-
-	if not state then return end
-
-	matrixGui = Instance.new("ScreenGui")
-	matrixGui.Name = "MatrixRainOverlay"
-	matrixGui.IgnoreGuiInset = true
-	matrixGui.ResetOnSpawn = false
-	matrixGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	matrixGui.Parent = localPlayer:WaitForChild("PlayerGui")
-
-	local columns = 40
-	for i = 1, columns do
-		local lbl = Instance.new("TextLabel")
-		lbl.BackgroundTransparency = 1
-		lbl.Font = Enum.Font.Code
-		lbl.TextColor3 = Color3.fromRGB(120, 255, 120)
-		lbl.TextSize = 14
-		lbl.Text = randGlyph()
-		lbl.Position = UDim2.new(i / columns, -8, math.random(), -200)
-		lbl.Size = UDim2.fromOffset(16, 2000)
-		lbl.TextYAlignment = Enum.TextYAlignment.Top
-		lbl.ZIndex = 0
-		lbl.Parent = matrixGui
-
-		local conn = RunService.Heartbeat:Connect(function(dt)
-			if not lbl or not lbl.Parent then return end
-			local p = lbl.Position
-			local ny = p.Y.Scale + dt * (0.08 + (i % 7) * 0.01)
-			if ny > 1 then ny = -0.1 end
-			lbl.Position = UDim2.new(p.X.Scale, p.X.Offset, ny, p.Y.Offset)
-			if math.random() < 0.15 then
-				lbl.Text = randGlyph()
-			end
-		end)
-		table.insert(matrixConns, conn)
-	end
-end
-
--- =======================================================================
---   CORE TARGETING & BOT FUNCTIONS
--- =======================================================================
-local function getZombies()
-	local folder = Workspace:FindFirstChild("_Zombies")
-		or Workspace:FindFirstChild("Zombies")
-		or Workspace:FindFirstChild("Enemies")
-	if not folder then return {} end
-
-	local list = {}
-	for _, child in ipairs(folder:GetChildren()) do
-		if child:IsA("Model") then
-			local hrp = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso")
-			local hum = child:FindFirstChildOfClass("Humanoid")
-			if hrp and (not hum or hum.Health > 0) then
-				table.insert(list, child)
-			end
-		end
-	end
-	return list
-end
-
-local function getNearestZombie()
-	local zombies = getZombies()
-	local hrp = getHRP()
-	if not hrp or #zombies == 0 then return nil end
-
-	local myPos = hrp.Position
-	local nearest, nearestDist = nil, math.huge
-	for _, z in ipairs(zombies) do
-		local zHRP = z:FindFirstChild("HumanoidRootPart") or z:FindFirstChild("Torso")
-		if zHRP then
-			local d = (zHRP.Position - myPos).Magnitude
-			if d < nearestDist then
-				nearestDist = d
-				nearest = z
-			end
-		end
-	end
-	return nearest
-end
-
-local function cancelCurrentTween()
-	if activeTween then
-		activeTween:Cancel()
-		activeTween = nil
-	end
-	local hrp = getHRP()
-	if hrp then
-		hrp.Anchored = false
-	end
-end
-
-local function tweenToZombie(targetZombie)
-	local myHRP = getHRP()
-	local targetHRP = targetZombie and (targetZombie:FindFirstChild("HumanoidRootPart") or targetZombie:FindFirstChild("Torso"))
-	if not myHRP or not targetHRP then return end
-
-	cancelCurrentTween()
-
-	local targetPos = targetHRP.Position + OFFSET
-	local targetCFrame = CFrame.lookAt(targetPos, targetHRP.Position)
-	local distance = (myHRP.Position - targetPos).Magnitude
-	local duration = math.max(0.15, distance / math.max(1, tweenSpeed))
-
-	myHRP.Anchored = true
-	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
-	activeTween = TweenService:Create(myHRP, tweenInfo, { CFrame = targetCFrame })
-
-	activeTween.Completed:Connect(function(state)
-		if state == Enum.PlaybackState.Completed or state == Enum.PlaybackState.Cancelled then
-			if myHRP and myHRP.Parent then
-				myHRP.Anchored = false
-			end
-			activeTween = nil
-		end
-	end)
-	activeTween:Play()
-end
-
-local function clearESP()
-	for _, z in ipairs(getZombies()) do
-		local hl = z:FindFirstChild("DevZombieHighlight")
-		if hl then hl:Destroy() end
-	end
-end
-
--- =======================================================================
---   HALLOWEEN / TRICK OR TREAT LOGIC
--- =======================================================================
-local unlitHouses          = {}
-local currentKnockingHouse = nil
-local minHouseY            = 5
-local HOUSE_COOLDOWN       = 240
-
 task.spawn(function()
 	local eventsFolder = ReplicatedStorage:WaitForChild("Events", 10)
 	local uiFolder = eventsFolder and eventsFolder:WaitForChild("UI", 5)
-	local notifyRemote = (uiFolder and uiFolder:FindFirstChild("Notify")) 
-		or ReplicatedStorage:FindFirstChild("Notify", true)
+	local notifyRemote = (uiFolder and uiFolder:FindFirstChild("Notify")) or ReplicatedStorage:FindFirstChild("Notify", true)
 
 	if notifyRemote and notifyRemote:IsA("RemoteEvent") then
 		notifyRemote.OnClientEvent:Connect(function(msg, ...)
@@ -783,6 +304,8 @@ local function getHalloweenBuildingFolder()
 end
 
 local function isHousePhysicallyLit(house)
+	if not checkLitOnly then return true end
+
 	if house:GetAttribute("Lit") == false or house:GetAttribute("Active") == false then
 		return false
 	end
@@ -796,49 +319,35 @@ local function isHousePhysicallyLit(house)
 	for _, desc in ipairs(house:GetDescendants()) do
 		if desc:IsA("Light") then
 			hasAnyLightSource = true
-			if desc.Enabled then
-				return true
-			end
+			if desc.Enabled then return true end
 		end
 	end
 
-	if hasAnyLightSource then
-		return false
-	end
-
+	if hasAnyLightSource then return false end
 	return true
 end
 
-local function getAllHouses()
+-- Queues all 45 houses even if parts/prompts are streamed out at distance
+local function getOrderedHouses()
 	local buildingFolder = getHalloweenBuildingFolder()
 	if not buildingFolder then return {} end
 
+	local children = buildingFolder:GetChildren()
 	local houseList = {}
 
-	for index, house in ipairs(buildingFolder:GetChildren()) do
-		local prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
-			or house:FindFirstChildOfClass("ProximityPrompt", true)
+	for orderIdx, targetRef in ipairs(houseOrder) do
+		local house = nil
+		if typeof(targetRef) == "number" then
+			house = children[targetRef]
+		elseif typeof(targetRef) == "string" then
+			house = buildingFolder:FindFirstChild(targetRef)
+		end
 
-		if prompt then
-			local promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) or prompt.Parent
-
-			local worldPos = nil
-			if promptPoint:IsA("Attachment") then
-				worldPos = promptPoint.WorldPosition
-			elseif promptPoint:IsA("BasePart") then
-				worldPos = promptPoint.Position
-			elseif promptPoint.Parent and promptPoint.Parent:IsA("BasePart") then
-				worldPos = promptPoint.Parent.Position
-			end
-
-			if worldPos and worldPos.Y >= minHouseY then
-				table.insert(houseList, {
-					house  = house,
-					point  = promptPoint,
-					prompt = prompt,
-					pos    = worldPos
-				})
-			end
+		if house and house:IsA("Instance") then
+			table.insert(houseList, {
+				order = orderIdx,
+				house = house
+			})
 		end
 	end
 
@@ -849,57 +358,86 @@ local function runTrickOrTreatSweep(singleRun)
 	if totLoopRunning and not singleRun then return end
 	totLoopRunning = true
 
-	local houses = getAllHouses()
-	if #houses == 0 then
-		window:Notify({
-			title = "Trick or Treat",
-			content = "No valid surface houses found!",
-			duration = 3
-		})
-		totLoopRunning = false
-		return
-	end
-
-	for index, houseData in ipairs(houses) do
-		if not autoTotEnabled and not singleRun then break end
-
-		local house = houseData.house
-		local prompt = houseData.prompt
-		local targetPoint = houseData.point
-		local hrp = getHRP()
-
-		if unlitHouses[house] and tick() < unlitHouses[house] then
-			continue
+	local success, err = pcall(function()
+		local houses = getOrderedHouses()
+		if #houses == 0 then
+			window:Notify({
+				title = "Trick or Treat",
+				content = "Building folder or houses not found!",
+				duration = 3
+			})
+			return
 		end
 
-		if not isHousePhysicallyLit(house) then
-			continue
-		end
+		for _, houseData in ipairs(houses) do
+			if not autoTotEnabled and not singleRun then break end
 
-		if hrp and prompt and prompt.Parent and targetPoint then
-			cancelCurrentTween()
+			local house = houseData.house
+			local hrp = getHRP()
+			if not hrp then break end
 
-			local targetCFrame = nil
-			if targetPoint:IsA("Attachment") then
-				targetCFrame = targetPoint.WorldCFrame
-			elseif targetPoint:IsA("BasePart") then
-				targetCFrame = targetPoint.CFrame
-			elseif targetPoint.Parent and targetPoint.Parent:IsA("BasePart") then
-				targetCFrame = targetPoint.Parent.CFrame
+			-- Cooldown check
+			if unlitHouses[house] and tick() < unlitHouses[house] then
+				continue
 			end
 
-			if targetCFrame then
-				if targetCFrame.Position.Y < minHouseY then
-					continue
+			-- Lit check (only if enabled)
+			if checkLitOnly and not isHousePhysicallyLit(house) then
+				continue
+			end
+
+			currentKnockingHouse = house
+			cancelCurrentTween()
+
+			-- Check if prompt & point are already streamed in
+			local prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
+				or house:FindFirstChildOfClass("ProximityPrompt", true)
+			local promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
+				or (prompt and prompt.Parent)
+
+			-- STAGE 1: If prompt or point is missing at a distance, teleport to the house model first
+			if not promptPoint or not prompt then
+				local houseCF = getHouseCFrame(house)
+				if houseCF and houseCF.Position.Y >= minHouseY then
+					hrp.CFrame = houseCF + Vector3.new(0, 3, 0)
+					hrp.AssemblyLinearVelocity = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
+
+					-- Wait brief moment for Roblox to stream in the door, prompt point & prompt
+					task.wait(0.25)
+
+					prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
+						or house:FindFirstChildOfClass("ProximityPrompt", true)
+					promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
+						or (prompt and prompt.Parent)
+				end
+			end
+
+			-- STAGE 2: Now snap directly in front of the door (what it wanted you to tp to at first)
+			if promptPoint then
+				local targetCFrame = nil
+				if promptPoint:IsA("Attachment") then
+					targetCFrame = promptPoint.WorldCFrame
+				elseif promptPoint:IsA("BasePart") then
+					targetCFrame = promptPoint.CFrame
+				elseif promptPoint.Parent and promptPoint.Parent:IsA("BasePart") then
+					targetCFrame = promptPoint.Parent.CFrame
 				end
 
-				currentKnockingHouse = house
+				if targetCFrame and targetCFrame.Position.Y >= minHouseY then
+					hrp.CFrame = targetCFrame + Vector3.new(0, 1.5, 0)
+					hrp.AssemblyLinearVelocity = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
+					task.wait(0.2)
+				end
+			end
 
-				hrp.CFrame = targetCFrame + Vector3.new(0, 1.5, 0)
-				hrp.AssemblyLinearVelocity = Vector3.zero
-				hrp.AssemblyAngularVelocity = Vector3.zero
+			-- STAGE 3: Trigger the prompt
+			if prompt then
+				pcall(function()
+					prompt.MaxActivationDistance = 25
+				end)
 
-				task.wait(0.25)
 				interactWithPrompt(prompt)
 				task.wait(0.35)
 
@@ -909,12 +447,16 @@ local function runTrickOrTreatSweep(singleRun)
 				end
 
 				unlitHouses[house] = tick() + HOUSE_COOLDOWN
-				print(string.format("[TrickOrTreat] Successfully looted '%s'. Cooldown set for 4 minutes (240s).", house.Name))
-
-				task.wait(math.max(0, totDelay - 0.6))
-				currentKnockingHouse = nil
+				print(string.format("[TrickOrTreat] #%d ('%s') knocked. Cooldown set.", houseData.order, house.Name))
 			end
+
+			task.wait(math.max(0, totDelay - 0.55))
+			currentKnockingHouse = nil
 		end
+	end)
+
+	if not success then
+		warn("[TrickOrTreat Error]:", err)
 	end
 
 	totLoopRunning = false
@@ -995,50 +537,55 @@ local function runGraveDigSweep(singleRun)
 	if digLoopRunning and not singleRun then return end
 	digLoopRunning = true
 
-	local graves = getAllGraveSpots()
-	if #graves == 0 then
-		window:Notify({
-			title = "Auto Dig Grave",
-			content = "No graves found in workspace!",
-			duration = 3
-		})
-		digLoopRunning = false
-		return
-	end
+	local success, err = pcall(function()
+		local graves = getAllGraveSpots()
+		if #graves == 0 then
+			window:Notify({
+				title = "Auto Dig Grave",
+				content = "No graves found in workspace!",
+				duration = 3
+			})
+			return
+		end
 
-	for index, graveData in ipairs(graves) do
-		if not autoDigEnabled and not singleRun then break end
+		for _, graveData in ipairs(graves) do
+			if not autoDigEnabled and not singleRun then break end
 
-		local hrp = getHRP()
-		local prompt = graveData.prompt
-		local targetPoint = graveData.point or graveData.part
+			local hrp = getHRP()
+			local prompt = graveData.prompt
+			local targetPoint = graveData.point or graveData.part
 
-		if hrp and prompt and prompt.Parent and targetPoint then
-			if prompt.Enabled then
-				cancelCurrentTween()
+			if hrp and prompt and prompt.Parent and targetPoint then
+				if prompt.Enabled then
+					cancelCurrentTween()
 
-				local targetCFrame = nil
-				if targetPoint:IsA("BasePart") then
-					targetCFrame = targetPoint.CFrame
-				elseif targetPoint:IsA("Attachment") then
-					targetCFrame = targetPoint.WorldCFrame
-				elseif graveData.part and graveData.part:IsA("BasePart") then
-					targetCFrame = graveData.part.CFrame
-				elseif graveData.part and graveData.part:IsA("Model") then
-					targetCFrame = graveData.part:GetPivot()
-				end
+					local targetCFrame = nil
+					if targetPoint:IsA("BasePart") then
+						targetCFrame = targetPoint.CFrame
+					elseif targetPoint:IsA("Attachment") then
+						targetCFrame = targetPoint.WorldCFrame
+					elseif graveData.part and graveData.part:IsA("BasePart") then
+						targetCFrame = graveData.part.CFrame
+					elseif graveData.part and graveData.part:IsA("Model") then
+						targetCFrame = graveData.part:GetPivot()
+					end
 
-				if targetCFrame then
-					hrp.CFrame = targetCFrame + Vector3.new(0, 2.5, 0)
-					hrp.AssemblyLinearVelocity = Vector3.zero
-					hrp.AssemblyAngularVelocity = Vector3.zero
+					if targetCFrame then
+						hrp.CFrame = targetCFrame + Vector3.new(0, 2.5, 0)
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						hrp.AssemblyAngularVelocity = Vector3.zero
 
-					task.wait(0.3)
-					interactWithPrompt(prompt)
-					task.wait(digDelay)
+						task.wait(0.3)
+						interactWithPrompt(prompt)
+						task.wait(digDelay)
+					end
 				end
 			end
 		end
+	end)
+
+	if not success then
+		warn("[GraveDig Error]:", err)
 	end
 
 	digLoopRunning = false
@@ -1124,19 +671,344 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 -- =======================================================================
---   UI PAGES & CONTROLS (BUILT WITH HALLOW-LIB)
+--   MOVEMENT / PHYSICS
+-- =======================================================================
+local function setNoclip(state)
+	noclipEnabled = state
+	if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
+
+	if state then
+		noclipConn = RunService.Stepped:Connect(function()
+			local char = localPlayer.Character
+			if not char then return end
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then part.CanCollide = false end
+			end
+		end)
+	end
+end
+
+local function getFlyDirection()
+	local cf = camera.CFrame
+	local dir = Vector3.zero
+	if flyKeys.W    then dir += cf.LookVector end
+	if flyKeys.S    then dir -= cf.LookVector end
+	if flyKeys.A    then dir -= cf.RightVector end
+	if flyKeys.D    then dir += cf.RightVector end
+	if flyKeys.Up   then dir += Vector3.new(0, 1, 0) end
+	if flyKeys.Down then dir -= Vector3.new(0, 1, 0) end
+	return dir.Magnitude > 0 and dir.Unit or dir
+end
+
+local function setFly(state)
+	flyEnabled = state
+	if flyConn then flyConn:Disconnect(); flyConn = nil end
+
+	local hum = getHumanoid()
+	local hrp = getHRP()
+
+	if state then
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
+		if hrp then
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+
+		flyConn = RunService.RenderStepped:Connect(function(dt)
+			local root = getHRP()
+			if not root then return end
+			local moveDir = getFlyDirection() * flySpeed
+			if moveDir.Magnitude > 0 then root.CFrame = root.CFrame + (moveDir * dt) end
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+		end)
+	else
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	local k = input.KeyCode
+	if k == Enum.KeyCode.W           then flyKeys.W = true end
+	if k == Enum.KeyCode.A           then flyKeys.A = true end
+	if k == Enum.KeyCode.S           then flyKeys.S = true end
+	if k == Enum.KeyCode.D           then flyKeys.D = true end
+	if k == Enum.KeyCode.Space       then flyKeys.Up = true end
+	if k == Enum.KeyCode.LeftControl then flyKeys.Down = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gpe)
+	if gpe then return end
+	local k = input.KeyCode
+	if k == Enum.KeyCode.W           then flyKeys.W = false end
+	if k == Enum.KeyCode.A           then flyKeys.A = false end
+	if k == Enum.KeyCode.S           then flyKeys.S = false end
+	if k == Enum.KeyCode.D           then flyKeys.D = false end
+	if k == Enum.KeyCode.Space       then flyKeys.Up = false end
+	if k == Enum.KeyCode.LeftControl then flyKeys.Down = false end
+end)
+
+local function setWalkOnWater(state)
+	walkOnWaterEnabled = state
+	if waterWalkConn then waterWalkConn:Disconnect(); waterWalkConn = nil end
+
+	local hum = getHumanoid()
+	if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, not state) end
+
+	if state then
+		waterWalkConn = RunService.Heartbeat:Connect(function()
+			local char = localPlayer.Character
+			local hrp = getHRP(char)
+			if not hrp then return end
+
+			waterRayParams.FilterDescendantsInstances = { char }
+			local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), waterRayParams)
+			if ray and ray.Material == Enum.Material.Water then
+				local targetY = ray.Position.Y + 2.8
+				if hrp.Position.Y < targetY then
+					hrp.AssemblyLinearVelocity = Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z)
+					hrp.CFrame = CFrame.new(hrp.Position.X, targetY, hrp.Position.Z)
+				end
+			end
+		end)
+	end
+end
+
+local function setRagdoll(state)
+	ragdollEnabled = state
+	local hum = getHumanoid()
+	if not hum then return end
+	if state then
+		hum:ChangeState(Enum.HumanoidStateType.Ragdoll)
+		hum.PlatformStand = true
+	else
+		hum.PlatformStand = false
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+end
+
+local function explodeMe()
+	local hrp = getHRP()
+	local hum = getHumanoid()
+	if not hrp then return end
+	local exp = Instance.new("Explosion")
+	exp.Position = hrp.Position
+	exp.BlastPressure = 0
+	exp.BlastRadius = 6
+	exp.Parent = Workspace
+	task.delay(0.05, function() if hum then hum.Health = 0 end end)
+end
+
+-- =======================================================================
+--   ZOMBIE BOT
+-- =======================================================================
+local function getZombies()
+	local folder = Workspace:FindFirstChild("_Zombies") or Workspace:FindFirstChild("Zombies") or Workspace:FindFirstChild("Enemies")
+	if not folder then return {} end
+
+	local list = {}
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("Model") then
+			local hrp = child:FindFirstChild("HumanoidRootPart") or child:FindFirstChild("Torso")
+			local hum = child:FindFirstChildOfClass("Humanoid")
+			if hrp and (not hum or hum.Health > 0) then table.insert(list, child) end
+		end
+	end
+	return list
+end
+
+local function getNearestZombie()
+	local zombies = getZombies()
+	local hrp = getHRP()
+	if not hrp or #zombies == 0 then return nil end
+
+	local myPos = hrp.Position
+	local nearest, nearestDist = nil, math.huge
+	for _, z in ipairs(zombies) do
+		local zHRP = z:FindFirstChild("HumanoidRootPart") or z:FindFirstChild("Torso")
+		if zHRP then
+			local d = (zHRP.Position - myPos).Magnitude
+			if d < nearestDist then
+				nearestDist = d
+				nearest = z
+			end
+		end
+	end
+	return nearest
+end
+
+local function tweenToZombie(targetZombie)
+	local myHRP = getHRP()
+	local targetHRP = targetZombie and (targetZombie:FindFirstChild("HumanoidRootPart") or targetZombie:FindFirstChild("Torso"))
+	if not myHRP or not targetHRP then return end
+
+	cancelCurrentTween()
+	local targetPos = targetHRP.Position + OFFSET
+	local targetCFrame = CFrame.lookAt(targetPos, targetHRP.Position)
+	local distance = (myHRP.Position - targetPos).Magnitude
+	local duration = math.max(0.15, distance / math.max(1, tweenSpeed))
+
+	myHRP.Anchored = true
+	activeTween = TweenService:Create(myHRP, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCFrame })
+	activeTween.Completed:Connect(function()
+		if myHRP and myHRP.Parent then myHRP.Anchored = false end
+		activeTween = nil
+	end)
+	activeTween:Play()
+end
+
+local function clearESP()
+	for _, z in ipairs(getZombies()) do
+		local hl = z:FindFirstChild("DevZombieHighlight")
+		if hl then hl:Destroy() end
+	end
+end
+
+-- =======================================================================
+--   TPS LOGIC
+-- =======================================================================
+local CustomTargets = {
+	["Shopping Mall"] = function(area)
+		local spawns = area:FindFirstChild("ShoppingMallCarSpawns", true)
+		if spawns then
+			return spawns:FindFirstChildOfClass("BasePart") or spawns:FindFirstChild("Part") or spawns:FindFirstChildWhichIsA("BasePart", true)
+		end
+	end,
+	["Carnanval"] = function(area)
+		local npcFolder = area:FindFirstChild("NPC")
+		local monkey = (npcFolder and npcFolder:FindFirstChild("Circus Monkey")) or area:FindFirstChild("Circus Monkey", true)
+		return monkey and (monkey:FindFirstChild("HumanoidRootPart") or monkey:FindFirstChild("UpperTorso") or monkey:FindFirstChild("Torso") or monkey.PrimaryPart or monkey:FindFirstChildWhichIsA("BasePart", true))
+	end
+}
+
+local function resolveAreaTarget(areaFolder)
+	if not areaFolder then return nil end
+	local name = areaFolder.Name
+
+	if name == "Carnanval" then
+		local customFinder = CustomTargets["Carnanval"]
+		local monkey = customFinder and customFinder(areaFolder)
+		if monkey then
+			if monkey:IsA("Model") then return monkey:GetPivot() end
+			if monkey:IsA("BasePart") then return monkey.CFrame end
+		end
+	end
+
+	if name == "Shopping Mall" then
+		local customFinder = CustomTargets["Shopping Mall"]
+		local spawnTarget = customFinder and customFinder(areaFolder)
+		if spawnTarget then
+			if spawnTarget:IsA("Model") then return spawnTarget:GetPivot() end
+			if spawnTarget:IsA("BasePart") then return spawnTarget.CFrame end
+		end
+	end
+
+	local box = areaFolder:FindFirstChild("Lost and Found Box", true)
+	if box then
+		local cube = box:FindFirstChild("Meshes/LNF_Cube", true) or box:FindFirstChild("LNF_Cube", true)
+		if cube and cube:IsA("BasePart") then
+			return cube.CFrame
+		end
+		if box:IsA("Model") then
+			return box:GetPivot()
+		elseif box:IsA("BasePart") then
+			return box.CFrame
+		end
+		local anyPart = box:FindFirstChildWhichIsA("BasePart", true)
+		if anyPart then return anyPart.CFrame end
+	end
+
+	local anyPart = areaFolder:FindFirstChildWhichIsA("BasePart", true)
+	if anyPart then return anyPart.CFrame end
+	if areaFolder:IsA("Model") then return areaFolder:GetPivot() end
+
+	return nil
+end
+
+local function teleportToTarget(targetCFrame, name, yOffset)
+	local hrp = getHRP()
+	if not hrp or not targetCFrame then return end
+
+	cancelCurrentTween()
+
+	local offset = yOffset or 4.5
+	local destCFrame = CFrame.new(targetCFrame.Position + Vector3.new(0, offset, 0))
+
+	hrp.CFrame = destCFrame
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+
+	if name then
+		window:Notify({
+			title = "Teleport",
+			content = "Teleported to " .. name,
+			duration = 2
+		})
+	end
+end
+
+local function buildTPs()
+	local areasFolder = Workspace:FindFirstChild("Areas")
+	if not areasFolder then return end
+
+	for _, areaFolder in ipairs(areasFolder:GetChildren()) do
+		tpsTab:CreateButton({
+			Name = "TP " .. areaFolder.Name,
+			Callback = function()
+				if areaFolder.Name == "Shopping Mall" then
+					task.spawn(function()
+						local junkYard = areasFolder:FindFirstChild("Junk Yard") or areasFolder:FindFirstChild("Junkyard")
+						if junkYard then
+							local jyTarget = resolveAreaTarget(junkYard)
+							if jyTarget then
+								teleportToTarget(jyTarget, "Junk Yard (Transit)", 4.5)
+								task.wait(0.4)
+							end
+						end
+
+						local mallTarget = resolveAreaTarget(areaFolder)
+						if mallTarget then
+							teleportToTarget(mallTarget, "Shopping Mall", 4.5)
+						else
+							window:Notify({
+								title = "Teleport Failed",
+								content = "Could not find destination for Shopping Mall",
+								duration = 3
+							})
+						end
+					end)
+				else
+					local targetCFrame = resolveAreaTarget(areaFolder)
+					if targetCFrame then
+						teleportToTarget(targetCFrame, areaFolder.Name, 4.5)
+					else
+						window:Notify({
+							title = "Teleport Failed",
+							content = "Could not find destination for " .. areaFolder.Name,
+							duration = 3
+						})
+					end
+				end
+			end
+		})
+	end
+end
+
+-- =======================================================================
+--   BUILD UI TABS
 -- =======================================================================
 
 -- -----------------------------------------------------------------------
---   TAB: HALLOWEEN (TRICK OR TREAT & GRAVES)
+--   TAB: HALLOWEEN
 -- -----------------------------------------------------------------------
 local halloweenTab = window:CreateTab("Halloween", "🎃")
 
-halloweenTab:CreateSection("Trick or Treat")
+halloweenTab:CreateSection("Trick or Treat (Ordered Sequence)")
 
 halloweenTab:CreateToggle({
 	Name = "Auto Trick or Treat (Loop)",
-	Description = "Automatically knocks on all lit houses",
+	Description = "Loops through all 45 houses in the exact sequence",
 	Default = false,
 	Callback = function(value)
 		autoTotEnabled = value
@@ -1153,7 +1025,7 @@ halloweenTab:CreateToggle({
 
 halloweenTab:CreateButton({
 	Name = "Trick or Treat All Houses (Once)",
-	Description = "Sweeps all lit houses one time",
+	Description = "Runs the 45-house sweep one time",
 	Callback = function()
 		task.spawn(function()
 			runTrickOrTreatSweep(true)
@@ -1161,11 +1033,34 @@ halloweenTab:CreateButton({
 	end
 })
 
+halloweenTab:CreateToggle({
+	Name = "Knock Lit Houses Only",
+	Description = "Off = knocks all houses regardless of in-game lights",
+	Default = false,
+	Callback = function(val)
+		checkLitOnly = val
+	end
+})
+
+halloweenTab:CreateButton({
+	Name = "Reset House Cooldowns",
+	Description = "Wipes 4-minute cooldown timer so you can knock again",
+	Callback = function()
+		table.clear(unlitHouses)
+		window:Notify({
+			title = "Cooldowns Reset",
+			content = "All house timers wiped! Ready to knock.",
+			duration = 2.5
+		})
+	end
+})
+
 halloweenTab:CreateSlider({
-	Name = "House Delay (Seconds)",
-	Min = 1,
+	Name = "House Delay",
+	Min = 0.5,
 	Max = 5,
-	Default = 2,
+	Default = 1.5,
+	Increment = 0.1,
 	Callback = function(val)
 		totDelay = val
 	end
@@ -1192,7 +1087,7 @@ halloweenTab:CreateToggle({
 
 halloweenTab:CreateButton({
 	Name = "Dig All Graves (Once)",
-	Description = "Digs all available grave spots one time",
+	Description = "Digs all graves in the map one time",
 	Callback = function()
 		task.spawn(function()
 			runGraveDigSweep(true)
@@ -1201,10 +1096,11 @@ halloweenTab:CreateButton({
 })
 
 halloweenTab:CreateSlider({
-	Name = "Grave Delay (Seconds)",
-	Min = 1,
+	Name = "Grave Delay",
+	Min = 0.5,
 	Max = 5,
-	Default = 2,
+	Default = 1.5,
+	Increment = 0.1,
 	Callback = function(val)
 		digDelay = val
 	end
@@ -1217,37 +1113,15 @@ local garagesTab = window:CreateTab("Garages", "🏚️")
 
 garagesTab:CreateSection("Halloween Auction Garages")
 
-garagesTab:CreateToggle({
-	Name = "Auto Start Garage 1 (10 Candy)",
-	Default = false,
-	Callback = function(value)
-		autoStartGarages[1] = value
-	end
-})
-
-garagesTab:CreateToggle({
-	Name = "Auto Start Garage 2 (20 Candy)",
-	Default = false,
-	Callback = function(value)
-		autoStartGarages[2] = value
-	end
-})
-
-garagesTab:CreateToggle({
-	Name = "Auto Start Garage 3 (30 Candy)",
-	Default = false,
-	Callback = function(value)
-		autoStartGarages[3] = value
-	end
-})
-
-garagesTab:CreateToggle({
-	Name = "Auto Start Garage 4 (40 Candy)",
-	Default = false,
-	Callback = function(value)
-		autoStartGarages[4] = value
-	end
-})
+for i = 1, 4 do
+	garagesTab:CreateToggle({
+		Name = string.format("Auto Start Garage %d (%d Candy)", i, i * 10),
+		Default = false,
+		Callback = function(val)
+			autoStartGarages[i] = val
+		end
+	})
+end
 
 -- -----------------------------------------------------------------------
 --   TAB: ZOMBIES
@@ -1283,6 +1157,7 @@ zombiesTab:CreateSlider({
 	Min = 30,
 	Max = 250,
 	Default = 100,
+	Increment = 5,
 	Callback = function(val)
 		tweenSpeed = val
 	end
@@ -1332,6 +1207,7 @@ playerTab:CreateSlider({
 	Min = 16,
 	Max = 200,
 	Default = 16,
+	Increment = 1,
 	Callback = function(val)
 		currentWalkSpeed = val
 		local hum = getHumanoid()
@@ -1344,6 +1220,7 @@ playerTab:CreateSlider({
 	Min = 0,
 	Max = 300,
 	Default = 50,
+	Increment = 5,
 	Callback = function(val)
 		currentJumpPower = val
 		local hum = getHumanoid()
@@ -1359,6 +1236,7 @@ playerTab:CreateSlider({
 	Min = 0,
 	Max = 500,
 	Default = math.floor(Workspace.Gravity),
+	Increment = 10,
 	Callback = function(val)
 		currentGravity = val
 		Workspace.Gravity = val
@@ -1370,6 +1248,7 @@ playerTab:CreateSlider({
 	Min = 40,
 	Max = 120,
 	Default = math.floor(camera.FieldOfView),
+	Increment = 1,
 	Callback = function(val)
 		camera.FieldOfView = val
 	end
@@ -1400,10 +1279,7 @@ playerTab:CreateToggle({
 				end)
 			end)
 		else
-			if antiAfkConn then
-				antiAfkConn:Disconnect()
-				antiAfkConn = nil
-			end
+			if antiAfkConn then antiAfkConn:Disconnect(); antiAfkConn = nil end
 		end
 	end
 })
@@ -1456,6 +1332,7 @@ movementTab:CreateSlider({
 	Min = 10,
 	Max = 200,
 	Default = 60,
+	Increment = 5,
 	Callback = function(val)
 		flySpeed = val
 	end
@@ -1486,7 +1363,7 @@ movementTab:CreateToggle({
 -- -----------------------------------------------------------------------
 local funTab = window:CreateTab("Fun / FX", "✨")
 
-funTab:CreateSection("Effects & Animations")
+funTab:CreateSection("Actions")
 
 funTab:CreateToggle({
 	Name = "Ragdoll Mode",
@@ -1495,24 +1372,6 @@ funTab:CreateToggle({
 		setRagdoll(value)
 	end
 })
-
-funTab:CreateToggle({
-	Name = "Jump & Fall FX (Synced)",
-	Default = false,
-	Callback = function(value)
-		setLowGravFX(value)
-	end
-})
-
-funTab:CreateToggle({
-	Name = "Matrix Rain Overlay",
-	Default = false,
-	Callback = function(value)
-		setMatrix(value)
-	end
-})
-
-funTab:CreateSection("Actions")
 
 funTab:CreateButton({
 	Name = "Explode Me",
@@ -1525,152 +1384,14 @@ funTab:CreateButton({
 -- -----------------------------------------------------------------------
 --   TAB: TPS
 -- -----------------------------------------------------------------------
-local tpsTab = window:CreateTab("TPs", "📍")
+tpsTab = window:CreateTab("TPs", "📍")
 
 tpsTab:CreateSection("Area Locations")
-
-local CustomTargets = {
-	["Shopping Mall"] = function(area)
-		local spawns = area:FindFirstChild("ShoppingMallCarSpawns", true)
-		if spawns then
-			return spawns:FindFirstChildOfClass("BasePart") or spawns:FindFirstChild("Part") or spawns:FindFirstChildWhichIsA("BasePart", true)
-		end
-	end,
-	["Carnanval"] = function(area)
-		local npcFolder = area:FindFirstChild("NPC")
-		local monkey = (npcFolder and npcFolder:FindFirstChild("Circus Monkey")) or area:FindFirstChild("Circus Monkey", true)
-		return monkey and (monkey:FindFirstChild("HumanoidRootPart") or monkey:FindFirstChild("UpperTorso") or monkey:FindFirstChild("Torso") or monkey.PrimaryPart or monkey:FindFirstChildWhichIsA("BasePart", true))
-	end
-}
-
-local function resolveAreaTarget(areaFolder)
-	if not areaFolder then return nil end
-	local name = areaFolder.Name
-
-	-- 1. Carnanval Exception: Target Circus Monkey
-	if name == "Carnanval" then
-		local customFinder = CustomTargets["Carnanval"]
-		local monkey = customFinder and customFinder(areaFolder)
-		if monkey then
-			if monkey:IsA("Model") then return monkey:GetPivot() end
-			if monkey:IsA("BasePart") then return monkey.CFrame end
-		end
-	end
-
-	-- 2. Shopping Mall Exception: Target ShoppingMallCarSpawns
-	if name == "Shopping Mall" then
-		local customFinder = CustomTargets["Shopping Mall"]
-		local spawnTarget = customFinder and customFinder(areaFolder)
-		if spawnTarget then
-			if spawnTarget:IsA("Model") then return spawnTarget:GetPivot() end
-			if spawnTarget:IsA("BasePart") then return spawnTarget.CFrame end
-		end
-	end
-
-	-- 3. Default: Find "Lost and Found Box" for all other areas
-	local box = areaFolder:FindFirstChild("Lost and Found Box", true)
-	if box then
-		local cube = box:FindFirstChild("Meshes/LNF_Cube", true) or box:FindFirstChild("LNF_Cube", true)
-		if cube and cube:IsA("BasePart") then
-			return cube.CFrame
-		end
-		if box:IsA("Model") then
-			return box:GetPivot()
-		elseif box:IsA("BasePart") then
-			return box.CFrame
-		end
-		local anyPart = box:FindFirstChildWhichIsA("BasePart", true)
-		if anyPart then return anyPart.CFrame end
-	end
-
-	-- 4. Fallback if area has no box
-	local anyPart = areaFolder:FindFirstChildWhichIsA("BasePart", true)
-	if anyPart then return anyPart.CFrame end
-	if areaFolder:IsA("Model") then return areaFolder:GetPivot() end
-
-	return nil
-end
-
-local function teleportToTarget(targetCFrame, name, yOffset)
-	local hrp = getHRP()
-	if not hrp or not targetCFrame then return end
-
-	cancelCurrentTween()
-
-	local offset = yOffset or 4.5
-	local destCFrame = CFrame.new(targetCFrame.Position + Vector3.new(0, offset, 0))
-
-	hrp.CFrame = destCFrame
-	hrp.AssemblyLinearVelocity = Vector3.zero
-	hrp.AssemblyAngularVelocity = Vector3.zero
-
-	if name then
-		window:Notify({
-			title = "Teleport",
-			content = "Teleported to " .. name,
-			duration = 2
-		})
-	end
-end
-
-local function buildTPs()
-	local areasFolder = Workspace:FindFirstChild("Areas")
-	if not areasFolder then
-		window:Notify({
-			title = "TPs Warning",
-			content = "Workspace.Areas folder not found.",
-			duration = 4
-		})
-		return
-	end
-
-	for _, areaFolder in ipairs(areasFolder:GetChildren()) do
-		tpsTab:CreateButton({
-			Name = "TP " .. areaFolder.Name,
-			Callback = function()
-				if areaFolder.Name == "Shopping Mall" then
-					task.spawn(function()
-						local junkYard = areasFolder:FindFirstChild("Junk Yard") or areasFolder:FindFirstChild("Junkyard")
-						if junkYard then
-							local jyTarget = resolveAreaTarget(junkYard)
-							if jyTarget then
-								teleportToTarget(jyTarget, "Junk Yard (Transit)", 4.5)
-								task.wait(0.4)
-							end
-						end
-
-						local mallTarget = resolveAreaTarget(areaFolder)
-						if mallTarget then
-							teleportToTarget(mallTarget, "Shopping Mall", 4.5)
-						else
-							window:Notify({
-								title = "Teleport Failed",
-								content = "Could not find destination for Shopping Mall",
-								duration = 3
-							})
-						end
-					end)
-				else
-					local targetCFrame = resolveAreaTarget(areaFolder)
-					if targetCFrame then
-						teleportToTarget(targetCFrame, areaFolder.Name, 4.5)
-					else
-						window:Notify({
-							title = "Teleport Failed",
-							content = "Could not find destination for " .. areaFolder.Name,
-							duration = 3
-						})
-					end
-				end
-			end
-		})
-	end
-end
 
 buildTPs()
 
 -- -----------------------------------------------------------------------
---   TAB: SETTINGS (WINDOW MANAGEMENT & UNLOAD)
+--   TAB: SETTINGS
 -- -----------------------------------------------------------------------
 local settingsTab = window:CreateTab("Settings", "⚙️")
 
@@ -1684,14 +1405,7 @@ settingsTab:CreateButton({
 	end
 })
 
-settingsTab:CreateParagraph({
-	Title = "Hallow Library Info",
-	Content = "Jack-O'-Lantern themed UI system crafted for smooth animations, custom themes, and fast execution."
-})
-
--- =======================================================================
---   DYNAMIC ENTITY COUNTER (UPDATES ZOMBIE PARAGRAPH)
--- =======================================================================
+-- Dynamic Zombie Counter Updater
 task.spawn(function()
 	while true do
 		local count = #getZombies()
@@ -1717,9 +1431,7 @@ task.spawn(function()
 	end
 end)
 
--- =======================================================================
---   KEYBIND TOGGLE (RIGHT CONTROL)
--- =======================================================================
+-- Toggle Menu Keybind (Right Control)
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
 		local mainGui = parentGui:FindFirstChild("HallowLib_Main")
@@ -1728,9 +1440,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 			local reopenBtn = mainGui:FindFirstChild("HallowPumpkinReopen")
 			if mainFrame then
 				mainFrame.Visible = not mainFrame.Visible
-				if reopenBtn then
-					reopenBtn.Visible = not mainFrame.Visible
-				end
+				if reopenBtn then reopenBtn.Visible = not mainFrame.Visible end
 			end
 		end
 	end
