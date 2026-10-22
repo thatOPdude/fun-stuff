@@ -258,7 +258,7 @@ function Hallow:CreateWindow(settings)
 	LogoTitle.BackgroundTransparency = 1
 	LogoTitle.Parent = TopBar
 
-	-- TopBar Buttons
+	-- Close & Minimize Buttons
 	local CloseBtn = Instance.new("TextButton")
 	CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 	CloseBtn.Position = UDim2.new(1, -36, 0, 9)
@@ -290,22 +290,21 @@ function Hallow:CreateWindow(settings)
 	MinCorner.CornerRadius = UDim.new(0, 6)
 
 	-- ===================================================================
-	--   TOP-MIDDLE FLOATING PUMPKIN RE-OPEN (NO CIRCLE, DECENTLY BIG)
+	--   FLOATING PUMPKIN REOPEN BUTTON
 	-- ===================================================================
 	local ReopenBtn = Instance.new("TextButton")
 	ReopenBtn.Name = "HallowPumpkinReopen"
 	ReopenBtn.AnchorPoint = Vector2.new(0.5, 0)
 	ReopenBtn.Position = UDim2.new(0.5, 0, 0, -70)
 	ReopenBtn.Size = UDim2.new(0, 52, 0, 52)
-	ReopenBtn.BackgroundTransparency = 1 -- Background circle completely removed
+	ReopenBtn.BackgroundTransparency = 1
 	ReopenBtn.BorderSizePixel = 0
 	ReopenBtn.AutoButtonColor = false
 	ReopenBtn.Text = "🎃"
-	ReopenBtn.TextSize = 36 -- Decently big pumpkin
+	ReopenBtn.TextSize = 36
 	ReopenBtn.Visible = false
 	ReopenBtn.Parent = ScreenGui
 
-	-- Subtle hover bounce animation
 	ReopenBtn.MouseEnter:Connect(function()
 		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			TextSize = 42
@@ -460,7 +459,11 @@ function Hallow:CreateWindow(settings)
 		}):Play()
 	end)
 
+	-- ===================================================================
+	--   TAB CREATION & WINDOW METHODS (WITH TAB HOVERS)
+	-- ===================================================================
 	local WindowHandler = { CurrentTab = nil }
+	local TabList = {}
 
 	function WindowHandler:Destroy()
 		playSound(Hallow.Sounds.Click, 0.8, 0.4)
@@ -531,32 +534,76 @@ function Hallow:CreateWindow(settings)
 			Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 12)
 		end)
 
+		local tabInfo = {
+			Name = tabName,
+			Button = TabBtn,
+			Title = TabTitle,
+			Indicator = TabIndicator,
+			Page = Page
+		}
+		table.insert(TabList, tabInfo)
+
+		-- Tab Activation (Click)
 		local function activateTab()
-			for _, p in pairs(PagesFolder:GetChildren()) do
-				p.Visible = false
-			end
-			for _, b in pairs(TabScroll:GetChildren()) do
-				if b:IsA("TextButton") then
-					TweenService:Create(b, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
-					TweenService:Create(b:FindFirstChildOfClass("TextLabel"), TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(190, 145, 120)}):Play()
-					local ind = b:FindFirstChild("Frame")
-					if ind then
-						TweenService:Create(ind, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
-					end
+			WindowHandler.CurrentTab = tabName
+			for _, tab in ipairs(TabList) do
+				if tab.Name == tabName then
+					tab.Page.Visible = true
+					TweenService:Create(tab.Button, TweenInfo.new(0.25), {
+						BackgroundColor3 = Color3.fromRGB(48, 19, 7),
+						BackgroundTransparency = 0
+					}):Play()
+					TweenService:Create(tab.Title, TweenInfo.new(0.25), {
+						TextColor3 = Color3.fromRGB(255, 220, 110)
+					}):Play()
+					TweenService:Create(tab.Indicator, TweenInfo.new(0.25), {
+						BackgroundTransparency = 0
+					}):Play()
+				else
+					tab.Page.Visible = false
+					TweenService:Create(tab.Button, TweenInfo.new(0.2), {
+						BackgroundColor3 = Color3.fromRGB(36, 14, 5),
+						BackgroundTransparency = 1
+					}):Play()
+					TweenService:Create(tab.Title, TweenInfo.new(0.2), {
+						TextColor3 = Color3.fromRGB(190, 145, 120)
+					}):Play()
+					TweenService:Create(tab.Indicator, TweenInfo.new(0.2), {
+						BackgroundTransparency = 1
+					}):Play()
 				end
 			end
-
-			Page.Visible = true
-			TweenService:Create(TabBtn, TweenInfo.new(0.25), {BackgroundColor3 = Color3.fromRGB(48, 19, 7), BackgroundTransparency = 0}):Play()
-			TweenService:Create(TabTitle, TweenInfo.new(0.25), {TextColor3 = Color3.fromRGB(255, 220, 110)}):Play()
-			TweenService:Create(TabIndicator, TweenInfo.new(0.25), {BackgroundTransparency = 0}):Play()
 			playSound(Hallow.Sounds.Click, 1.15, 0.25)
 		end
 
 		TabBtn.MouseButton1Click:Connect(activateTab)
 
+		-- Smooth Hover Animations for Inactive Tabs
+		TabBtn.MouseEnter:Connect(function()
+			if WindowHandler.CurrentTab ~= tabName then
+				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
+					BackgroundColor3 = Color3.fromRGB(44, 18, 7),
+					BackgroundTransparency = 0.4
+				}):Play()
+				TweenService:Create(TabTitle, TweenInfo.new(0.18), {
+					TextColor3 = Color3.fromRGB(245, 195, 160)
+				}):Play()
+			end
+		end)
+
+		TabBtn.MouseLeave:Connect(function()
+			if WindowHandler.CurrentTab ~= tabName then
+				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
+					BackgroundColor3 = Color3.fromRGB(36, 14, 5),
+					BackgroundTransparency = 1
+				}):Play()
+				TweenService:Create(TabTitle, TweenInfo.new(0.18), {
+					TextColor3 = Color3.fromRGB(190, 145, 120)
+				}):Play()
+			end
+		end)
+
 		if not WindowHandler.CurrentTab then
-			WindowHandler.CurrentTab = tabName
 			activateTab()
 		end
 
