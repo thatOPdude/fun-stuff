@@ -22,23 +22,35 @@ end
 local Hallow = {
 	Sounds = {
 		Click  = "rbxassetid://6895079853",
+		Hover  = "rbxassetid://6895079853", -- Crisp high-pitch tick
 		Toggle = "rbxassetid://6895079853",
-		Notify = "rbxassetid://4590662766",
+		Notify = "rbxassetid://4590662766", -- Bright chime
 	}
 }
 
+-- Loud & Clear Sound Player Helper
 local function playSound(soundId, pitch, volume)
 	pcall(function()
 		local s = Instance.new("Sound")
 		s.SoundId = soundId
 		s.Pitch = pitch or 1
-		s.Volume = volume or 0.4
+		s.Volume = volume or 0.9 -- Louder baseline volume
 		s.Parent = SoundService
 		s:Play()
 		s.Ended:Connect(function()
 			s:Destroy()
 		end)
 	end)
+end
+
+-- Hover sound helper with micro-debounce (prevents buzzing when moving fast)
+local lastHoverTick = 0
+local function playHoverSound(pitch, volume)
+	local now = tick()
+	if now - lastHoverTick > 0.04 then
+		lastHoverTick = now
+		playSound(Hallow.Sounds.Hover, pitch or 1.65, volume or 0.7)
+	end
 end
 
 -- =======================================================================
@@ -67,7 +79,7 @@ function Hallow:Notify(config)
 	local text = config.Content or ""
 	local duration = config.Duration or 3.5
 
-	playSound(Hallow.Sounds.Notify, 1, 0.45)
+	playSound(Hallow.Sounds.Notify, 1, 0.95)
 
 	local toast = Instance.new("Frame")
 	toast.Size = UDim2.new(1, 0, 0, 76)
@@ -288,7 +300,7 @@ function Hallow:CreateWindow(settings)
 	local MinCorner = Instance.new("UICorner", MinBtn)
 	MinCorner.CornerRadius = UDim.new(0, 6)
 
-	-- Floating Pumpkin Reopen Button
+	-- Floating Pumpkin Re-open Button
 	local ReopenBtn = Instance.new("TextButton")
 	ReopenBtn.Name = "HallowPumpkinReopen"
 	ReopenBtn.AnchorPoint = Vector2.new(0.5, 0)
@@ -303,6 +315,7 @@ function Hallow:CreateWindow(settings)
 	ReopenBtn.Parent = ScreenGui
 
 	ReopenBtn.MouseEnter:Connect(function()
+		playHoverSound(1.5, 0.75)
 		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextSize = 42}):Play()
 	end)
 	ReopenBtn.MouseLeave:Connect(function()
@@ -310,7 +323,7 @@ function Hallow:CreateWindow(settings)
 	end)
 
 	local function showWindow()
-		playSound(Hallow.Sounds.Click, 1.0, 0.4)
+		playSound(Hallow.Sounds.Click, 1.0, 0.95)
 		local hideTween = TweenService:Create(ReopenBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
 			Position = UDim2.new(0.5, 0, 0, -70)
 		})
@@ -326,7 +339,7 @@ function Hallow:CreateWindow(settings)
 	end
 
 	local function hideWindow()
-		playSound(Hallow.Sounds.Click, 0.85, 0.4)
+		playSound(Hallow.Sounds.Click, 0.85, 0.9)
 		local closeTween = TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
 			Size = UDim2.new(0, 0, 0, 0)
 		})
@@ -345,7 +358,7 @@ function Hallow:CreateWindow(settings)
 
 	local minimized = false
 	MinBtn.MouseButton1Click:Connect(function()
-		playSound(Hallow.Sounds.Click, 1.1, 0.4)
+		playSound(Hallow.Sounds.Click, 1.15, 0.9)
 		minimized = not minimized
 		if minimized then
 			TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -359,12 +372,14 @@ function Hallow:CreateWindow(settings)
 	end)
 
 	CloseBtn.MouseEnter:Connect(function()
+		playHoverSound(1.5, 0.6)
 		TweenService:Create(CloseBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(190, 35, 25)}):Play()
 	end)
 	CloseBtn.MouseLeave:Connect(function()
 		TweenService:Create(CloseBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(130, 25, 15)}):Play()
 	end)
 	MinBtn.MouseEnter:Connect(function()
+		playHoverSound(1.5, 0.6)
 		TweenService:Create(MinBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(68, 28, 10)}):Play()
 	end)
 	MinBtn.MouseLeave:Connect(function()
@@ -457,7 +472,7 @@ function Hallow:CreateWindow(settings)
 	local TabList = {}
 
 	function WindowHandler:Destroy()
-		playSound(Hallow.Sounds.Click, 0.8, 0.4)
+		playSound(Hallow.Sounds.Click, 0.8, 0.9)
 		ScreenGui:Destroy()
 	end
 
@@ -578,13 +593,14 @@ function Hallow:CreateWindow(settings)
 					}):Play()
 				end
 			end
-			playSound(Hallow.Sounds.Click, 1.15, 0.25)
+			playSound(Hallow.Sounds.Click, 1.15, 0.9)
 		end
 
 		TabBtn.MouseButton1Click:Connect(activateTab)
 
 		TabBtn.MouseEnter:Connect(function()
 			if WindowHandler.CurrentTab ~= tabName then
+				playHoverSound(1.65, 0.75)
 				TweenService:Create(TabStroke, TweenInfo.new(0.18), {Color = Color3.fromRGB(220, 110, 20), Transparency = 0}):Play()
 				TweenService:Create(TabBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(60, 25, 9), BackgroundTransparency = 0.15}):Play()
 				TweenService:Create(TabTitle, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(255, 240, 210)}):Play()
@@ -622,6 +638,7 @@ function Hallow:CreateWindow(settings)
 			cStroke.Color = Color3.fromRGB(65, 27, 8)
 
 			Card.MouseEnter:Connect(function()
+				playHoverSound(1.7, 0.65)
 				TweenService:Create(cStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(210, 100, 20)}):Play()
 			end)
 			Card.MouseLeave:Connect(function()
@@ -697,8 +714,12 @@ function Hallow:CreateWindow(settings)
 			arrow.BackgroundTransparency = 1
 			arrow.Parent = Card
 
+			ClickArea.MouseEnter:Connect(function()
+				playHoverSound(1.7, 0.7)
+			end)
+
 			ClickArea.MouseButton1Click:Connect(function()
-				playSound(Hallow.Sounds.Click, 1.0, 0.4)
+				playSound(Hallow.Sounds.Click, 1.0, 0.95)
 				local flash = TweenService:Create(Card, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {
 					BackgroundColor3 = Color3.fromRGB(65, 28, 9)
 				})
@@ -764,9 +785,13 @@ function Hallow:CreateWindow(settings)
 			local thCorner = Instance.new("UICorner", Thumb)
 			thCorner.CornerRadius = UDim.new(1, 0)
 
+			Switch.MouseEnter:Connect(function()
+				playHoverSound(1.65, 0.7)
+			end)
+
 			local function toggle()
 				state = not state
-				playSound(Hallow.Sounds.Toggle, state and 1.2 or 0.9, 0.35)
+				playSound(Hallow.Sounds.Toggle, state and 1.3 or 0.85, 0.95)
 
 				local targetColor = state and Color3.fromRGB(220, 110, 15) or Color3.fromRGB(45, 18, 6)
 				local targetPos   = state and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
@@ -781,7 +806,7 @@ function Hallow:CreateWindow(settings)
 		end
 
 		-- ===============================================================
-		--   SLIDER: FORCED DECIMAL INTERVALLING (0.1, 0.2, 0.3...)
+		--   SLIDER (DECIMAL INTERVAL 0.1 WITH LOUD AUDIO)
 		-- ===============================================================
 		function TabElements:CreateSlider(opts)
 			opts = opts or {}
@@ -856,6 +881,10 @@ function Hallow:CreateWindow(settings)
 			local fCorner = Instance.new("UICorner", Fill)
 			fCorner.CornerRadius = UDim.new(1, 0)
 
+			Track.MouseEnter:Connect(function()
+				playHoverSound(1.7, 0.65)
+			end)
+
 			local sliding = false
 			local function updateFromInput(input)
 				local pos = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
@@ -874,7 +903,7 @@ function Hallow:CreateWindow(settings)
 			Track.InputBegan:Connect(function(input)
 				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 					sliding = true
-					playSound(Hallow.Sounds.Click, 1.4, 0.25)
+					playSound(Hallow.Sounds.Click, 1.4, 0.85)
 					updateFromInput(input)
 				end
 			end)
@@ -944,6 +973,10 @@ function Hallow:CreateWindow(settings)
 			Arrow.BackgroundTransparency = 1
 			Arrow.Parent = Card
 
+			HeaderBtn.MouseEnter:Connect(function()
+				playHoverSound(1.65, 0.7)
+			end)
+
 			local ListHolder = Instance.new("Frame")
 			ListHolder.Size = UDim2.new(1, -16, 0, #items * itemHeight)
 			ListHolder.Position = UDim2.new(0, 8, 0, collapsedHeight)
@@ -969,10 +1002,14 @@ function Hallow:CreateWindow(settings)
 				local itmCorner = Instance.new("UICorner", itmBtn)
 				itmCorner.CornerRadius = UDim.new(0, 5)
 
+				itmBtn.MouseEnter:Connect(function()
+					playHoverSound(1.85, 0.6)
+				end)
+
 				itmBtn.MouseButton1Click:Connect(function()
 					selected = item
 					curLbl.Text = tostring(item)
-					playSound(Hallow.Sounds.Click, 1.2, 0.3)
+					playSound(Hallow.Sounds.Click, 1.2, 0.9)
 					expanded = false
 					TweenService:Create(Arrow, TweenInfo.new(0.2), {Rotation = 0}):Play()
 					TweenService:Create(Card, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -984,7 +1021,7 @@ function Hallow:CreateWindow(settings)
 
 			HeaderBtn.MouseButton1Click:Connect(function()
 				expanded = not expanded
-				playSound(Hallow.Sounds.Click, 1.0, 0.3)
+				playSound(Hallow.Sounds.Click, 1.0, 0.9)
 				local targetH = expanded and (collapsedHeight + (#items * itemHeight) + 10) or collapsedHeight
 				TweenService:Create(Arrow, TweenInfo.new(0.25), {Rotation = expanded and 180 or 0}):Play()
 				TweenService:Create(Card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -1028,8 +1065,12 @@ function Hallow:CreateWindow(settings)
 			local bCorner = Instance.new("UICorner", Box)
 			bCorner.CornerRadius = UDim.new(0, 6)
 
+			Box.Focused:Connect(function()
+				playHoverSound(1.5, 0.7)
+			end)
+
 			Box.FocusLost:Connect(function(enterPressed)
-				playSound(Hallow.Sounds.Click, 1.1, 0.3)
+				playSound(Hallow.Sounds.Click, 1.1, 0.9)
 				task.spawn(callback, Box.Text, enterPressed)
 			end)
 		end
@@ -1067,11 +1108,15 @@ function Hallow:CreateWindow(settings)
 			local kCorner = Instance.new("UICorner", KeyBtn)
 			kCorner.CornerRadius = UDim.new(0, 6)
 
+			KeyBtn.MouseEnter:Connect(function()
+				playHoverSound(1.7, 0.65)
+			end)
+
 			local listening = false
 			KeyBtn.MouseButton1Click:Connect(function()
 				listening = true
 				KeyBtn.Text = "..."
-				playSound(Hallow.Sounds.Click, 1.2, 0.3)
+				playSound(Hallow.Sounds.Click, 1.25, 0.9)
 			end)
 
 			UserInputService.InputBegan:Connect(function(input, gpe)
@@ -1079,7 +1124,7 @@ function Hallow:CreateWindow(settings)
 					listening = false
 					currentKey = input.KeyCode
 					KeyBtn.Text = currentKey.Name
-					playSound(Hallow.Sounds.Click, 0.9, 0.35)
+					playSound(Hallow.Sounds.Click, 0.95, 0.95)
 				elseif not gpe and input.KeyCode == currentKey then
 					task.spawn(callback, currentKey)
 				end
