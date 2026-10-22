@@ -290,54 +290,37 @@ function Hallow:CreateWindow(settings)
 	MinCorner.CornerRadius = UDim.new(0, 6)
 
 	-- ===================================================================
-	--   TOP-MIDDLE CIRCULAR PUMPKIN RE-OPEN BUTTON (CENTERED)
+	--   TOP-MIDDLE FLOATING PUMPKIN RE-OPEN (NO CIRCLE, DECENTLY BIG)
 	-- ===================================================================
 	local ReopenBtn = Instance.new("TextButton")
 	ReopenBtn.Name = "HallowPumpkinReopen"
 	ReopenBtn.AnchorPoint = Vector2.new(0.5, 0)
-	ReopenBtn.Position = UDim2.new(0.5, 0, 0, -60)
-	ReopenBtn.Size = UDim2.new(0, 46, 0, 46)
-	ReopenBtn.BackgroundColor3 = Color3.fromRGB(28, 11, 4)
+	ReopenBtn.Position = UDim2.new(0.5, 0, 0, -70)
+	ReopenBtn.Size = UDim2.new(0, 52, 0, 52)
+	ReopenBtn.BackgroundTransparency = 1 -- Background circle completely removed
 	ReopenBtn.BorderSizePixel = 0
 	ReopenBtn.AutoButtonColor = false
-	ReopenBtn.Text = ""
+	ReopenBtn.Text = "🎃"
+	ReopenBtn.TextSize = 36 -- Decently big pumpkin
 	ReopenBtn.Visible = false
 	ReopenBtn.Parent = ScreenGui
 
-	local ReopenCorner = Instance.new("UICorner", ReopenBtn)
-	ReopenCorner.CornerRadius = UDim.new(1, 0)
-
-	local ReopenStroke = Instance.new("UIStroke", ReopenBtn)
-	ReopenStroke.Thickness = 1.8
-	ReopenStroke.Color = Color3.fromRGB(255, 150, 30)
-
-	-- Centered icon label with -2px bearing correction
-	local ReopenIcon = Instance.new("TextLabel")
-	ReopenIcon.Name = "PumpkinIcon"
-	ReopenIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-	ReopenIcon.Position = UDim2.new(0.5, -2, 0.5, 0)
-	ReopenIcon.Size = UDim2.new(1, 0, 1, 0)
-	ReopenIcon.BackgroundTransparency = 1
-	ReopenIcon.Text = "🎃"
-	ReopenIcon.Font = Enum.Font.GothamBold
-	ReopenIcon.TextSize = 24
-	ReopenIcon.TextXAlignment = Enum.TextXAlignment.Center
-	ReopenIcon.TextYAlignment = Enum.TextYAlignment.Center
-	ReopenIcon.Parent = ReopenBtn
-
+	-- Subtle hover bounce animation
 	ReopenBtn.MouseEnter:Connect(function()
-		TweenService:Create(ReopenBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(48, 19, 7)}):Play()
-		TweenService:Create(ReopenStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 200, 50)}):Play()
+		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextSize = 42
+		}):Play()
 	end)
 	ReopenBtn.MouseLeave:Connect(function()
-		TweenService:Create(ReopenBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(28, 11, 4)}):Play()
-		TweenService:Create(ReopenStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 150, 30)}):Play()
+		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextSize = 36
+		}):Play()
 	end)
 
 	local function showWindow()
 		playSound(Hallow.Sounds.Click, 1.0, 0.4)
 		local hideTween = TweenService:Create(ReopenBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-			Position = UDim2.new(0.5, 0, 0, -60)
+			Position = UDim2.new(0.5, 0, 0, -70)
 		})
 		hideTween:Play()
 		hideTween.Completed:Connect(function()
