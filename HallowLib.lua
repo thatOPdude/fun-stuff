@@ -289,9 +289,7 @@ function Hallow:CreateWindow(settings)
 	local MinCorner = Instance.new("UICorner", MinBtn)
 	MinCorner.CornerRadius = UDim.new(0, 6)
 
-	-- ===================================================================
-	--   FLOATING PUMPKIN REOPEN BUTTON
-	-- ===================================================================
+	-- Floating Pumpkin Re-open Button
 	local ReopenBtn = Instance.new("TextButton")
 	ReopenBtn.Name = "HallowPumpkinReopen"
 	ReopenBtn.AnchorPoint = Vector2.new(0.5, 0)
@@ -306,14 +304,10 @@ function Hallow:CreateWindow(settings)
 	ReopenBtn.Parent = ScreenGui
 
 	ReopenBtn.MouseEnter:Connect(function()
-		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			TextSize = 42
-		}):Play()
+		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextSize = 42}):Play()
 	end)
 	ReopenBtn.MouseLeave:Connect(function()
-		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			TextSize = 36
-		}):Play()
+		TweenService:Create(ReopenBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextSize = 36}):Play()
 	end)
 
 	local function showWindow()
@@ -378,7 +372,7 @@ function Hallow:CreateWindow(settings)
 		TweenService:Create(MinBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(48, 20, 8)}):Play()
 	end)
 
-	-- Dragging
+	-- Window Dragging
 	local dragging, dragInput, dragStart, startPos
 	TopBar.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -460,7 +454,7 @@ function Hallow:CreateWindow(settings)
 	end)
 
 	-- ===================================================================
-	--   TAB CREATION & WINDOW METHODS (WITH TAB HOVERS)
+	--   TAB CREATION & WINDOW METHODS (WITH BOLD GLOW HOVER)
 	-- ===================================================================
 	local WindowHandler = { CurrentTab = nil }
 	local TabList = {}
@@ -475,8 +469,8 @@ function Hallow:CreateWindow(settings)
 		local TabBtn = Instance.new("TextButton")
 		TabBtn.Name = tabName .. "_Btn"
 		TabBtn.Size = UDim2.new(1, 0, 0, 42)
-		TabBtn.BackgroundColor3 = Color3.fromRGB(36, 14, 5)
-		TabBtn.BackgroundTransparency = 1
+		TabBtn.BackgroundColor3 = Color3.fromRGB(60, 25, 9)
+		TabBtn.BackgroundTransparency = 0.999 -- Active for mouse raycasts
 		TabBtn.BorderSizePixel = 0
 		TabBtn.AutoButtonColor = false
 		TabBtn.Text = ""
@@ -485,9 +479,16 @@ function Hallow:CreateWindow(settings)
 		local TabCorner = Instance.new("UICorner", TabBtn)
 		TabCorner.CornerRadius = UDim.new(0, 8)
 
+		-- Bold Glow Stroke on the Tab Button
+		local TabStroke = Instance.new("UIStroke", TabBtn)
+		TabStroke.Thickness = 1.3
+		TabStroke.Color = Color3.fromRGB(220, 110, 20)
+		TabStroke.Transparency = 1
+
 		local TabIndicator = Instance.new("Frame")
-		TabIndicator.Size = UDim2.new(0, 3, 0, 22)
-		TabIndicator.Position = UDim2.new(0, 3, 0.5, -11)
+		TabIndicator.Size = UDim2.new(0, 3, 0, 0)
+		TabIndicator.Position = UDim2.new(0, 3, 0.5, 0)
+		TabIndicator.AnchorPoint = Vector2.new(0, 0.5)
 		TabIndicator.BackgroundColor3 = Color3.fromRGB(255, 170, 35)
 		TabIndicator.BorderSizePixel = 0
 		TabIndicator.BackgroundTransparency = 1
@@ -508,7 +509,7 @@ function Hallow:CreateWindow(settings)
 		TabTitle.Text = tabName
 		TabTitle.Font = Enum.Font.GothamSemibold
 		TabTitle.TextSize = 14
-		TabTitle.TextColor3 = Color3.fromRGB(190, 145, 120)
+		TabTitle.TextColor3 = Color3.fromRGB(180, 135, 110)
 		TabTitle.TextXAlignment = Enum.TextXAlignment.Left
 		TabTitle.Position = UDim2.new(0, 42, 0, 0)
 		TabTitle.Size = UDim2.new(1, -46, 1, 0)
@@ -537,6 +538,7 @@ function Hallow:CreateWindow(settings)
 		local tabInfo = {
 			Name = tabName,
 			Button = TabBtn,
+			Stroke = TabStroke,
 			Title = TabTitle,
 			Indicator = TabIndicator,
 			Page = Page
@@ -549,26 +551,34 @@ function Hallow:CreateWindow(settings)
 			for _, tab in ipairs(TabList) do
 				if tab.Name == tabName then
 					tab.Page.Visible = true
-					TweenService:Create(tab.Button, TweenInfo.new(0.25), {
-						BackgroundColor3 = Color3.fromRGB(48, 19, 7),
+					TweenService:Create(tab.Button, TweenInfo.new(0.2), {
+						BackgroundColor3 = Color3.fromRGB(72, 28, 9),
 						BackgroundTransparency = 0
 					}):Play()
-					TweenService:Create(tab.Title, TweenInfo.new(0.25), {
-						TextColor3 = Color3.fromRGB(255, 220, 110)
+					TweenService:Create(tab.Stroke, TweenInfo.new(0.2), {
+						Color = Color3.fromRGB(255, 150, 30),
+						Transparency = 0
 					}):Play()
-					TweenService:Create(tab.Indicator, TweenInfo.new(0.25), {
+					TweenService:Create(tab.Title, TweenInfo.new(0.2), {
+						TextColor3 = Color3.fromRGB(255, 220, 90)
+					}):Play()
+					TweenService:Create(tab.Indicator, TweenInfo.new(0.2), {
+						Size = UDim2.new(0, 4, 0, 24),
 						BackgroundTransparency = 0
 					}):Play()
 				else
 					tab.Page.Visible = false
 					TweenService:Create(tab.Button, TweenInfo.new(0.2), {
-						BackgroundColor3 = Color3.fromRGB(36, 14, 5),
-						BackgroundTransparency = 1
+						BackgroundTransparency = 0.999
+					}):Play()
+					TweenService:Create(tab.Stroke, TweenInfo.new(0.2), {
+						Transparency = 1
 					}):Play()
 					TweenService:Create(tab.Title, TweenInfo.new(0.2), {
-						TextColor3 = Color3.fromRGB(190, 145, 120)
+						TextColor3 = Color3.fromRGB(180, 135, 110)
 					}):Play()
 					TweenService:Create(tab.Indicator, TweenInfo.new(0.2), {
+						Size = UDim2.new(0, 3, 0, 0),
 						BackgroundTransparency = 1
 					}):Play()
 				end
@@ -578,27 +588,46 @@ function Hallow:CreateWindow(settings)
 
 		TabBtn.MouseButton1Click:Connect(activateTab)
 
-		-- Smooth Hover Animations for Inactive Tabs
+		-- BOLD HOVER VISUALS
 		TabBtn.MouseEnter:Connect(function()
 			if WindowHandler.CurrentTab ~= tabName then
-				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
-					BackgroundColor3 = Color3.fromRGB(44, 18, 7),
-					BackgroundTransparency = 0.4
+				-- 1. Bold Glowing Amber Stroke
+				TweenService:Create(TabStroke, TweenInfo.new(0.18), {
+					Color = Color3.fromRGB(220, 110, 20),
+					Transparency = 0
 				}):Play()
+				-- 2. Clear visible amber pill background
+				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
+					BackgroundColor3 = Color3.fromRGB(60, 25, 9),
+					BackgroundTransparency = 0.15
+				}):Play()
+				-- 3. Bright text
 				TweenService:Create(TabTitle, TweenInfo.new(0.18), {
-					TextColor3 = Color3.fromRGB(245, 195, 160)
+					TextColor3 = Color3.fromRGB(255, 240, 210)
+				}):Play()
+				-- 4. Indicator bar peeks out
+				TweenService:Create(TabIndicator, TweenInfo.new(0.18), {
+					Size = UDim2.new(0, 3, 0, 14),
+					BackgroundTransparency = 0
 				}):Play()
 			end
 		end)
 
 		TabBtn.MouseLeave:Connect(function()
 			if WindowHandler.CurrentTab ~= tabName then
+				-- Smoothly fade back out
+				TweenService:Create(TabStroke, TweenInfo.new(0.18), {
+					Transparency = 1
+				}):Play()
 				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
-					BackgroundColor3 = Color3.fromRGB(36, 14, 5),
-					BackgroundTransparency = 1
+					BackgroundTransparency = 0.999
 				}):Play()
 				TweenService:Create(TabTitle, TweenInfo.new(0.18), {
-					TextColor3 = Color3.fromRGB(190, 145, 120)
+					TextColor3 = Color3.fromRGB(180, 135, 110)
+				}):Play()
+				TweenService:Create(TabIndicator, TweenInfo.new(0.18), {
+					Size = UDim2.new(0, 3, 0, 0),
+					BackgroundTransparency = 1
 				}):Play()
 			end
 		end)
