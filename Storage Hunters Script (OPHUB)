@@ -1,7 +1,7 @@
 -- =======================================================================
---   LOAD RAYFIELD GEN2
+--   🎃 LOAD HALLOW UI LIBRARY
 -- =======================================================================
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+local Hallow = loadstring(game:HttpGet("https://raw.githubusercontent.com/thatOPdude/fun-stuff/refs/heads/main/HallowLib.lua"))()
 
 -- =======================================================================
 --   SERVICES
@@ -14,9 +14,15 @@ local Lighting             = game:GetService("Lighting")
 local UserInputService     = game:GetService("UserInputService")
 local VirtualUser          = game:GetService("VirtualUser")
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local localPlayer = Players.LocalPlayer
 local camera      = Workspace.CurrentCamera
+
+-- Parent GUI reference for internal lookups
+local parentGui = (typeof(gethui) == "function" and gethui()) 
+	or game:GetService("CoreGui"):FindFirstChild("RobloxGui") 
+	or localPlayer:WaitForChild("PlayerGui")
 
 -- =======================================================================
 --   STATE CONFIGURATION
@@ -92,6 +98,28 @@ local autoStartGarages = {
 }
 
 -- =======================================================================
+--   CREATE MAIN WINDOW
+-- =======================================================================
+local window = Hallow:CreateWindow({
+	Title = "OP HUB"
+})
+
+-- Safe notification wrapper so both window:Notify and Hallow:Notify work
+function window:Notify(cfg)
+	Hallow:Notify({
+		Title = cfg.Title or cfg.title or "OP HUB",
+		Content = cfg.Content or cfg.content or "",
+		Duration = cfg.Duration or cfg.duration or 3
+	})
+end
+
+window:Notify({
+	title = "OP HUB",
+	content = "OP HUB loaded successfully.",
+	duration = 4
+})
+
+-- =======================================================================
 --   HELPER & RECOVERY FUNCTIONS
 -- =======================================================================
 local function getHumanoid(char)
@@ -133,10 +161,8 @@ local function interactWithPrompt(prompt)
 end
 
 -- =======================================================================
---   INSTANT PROMPT / INSTA-REPAIR LOGIC (HOOKS HOLD-BEGAN & OVERWRITES)
+--   INSTANT PROMPT / INSTA-REPAIR LOGIC
 -- =======================================================================
-local ProximityPromptService = game:GetService("ProximityPromptService")
-
 local instaRepairEnabled     = false
 local originalHoldDurations  = {}
 local promptConns            = {}
@@ -719,7 +745,7 @@ local function clearESP()
 end
 
 -- =======================================================================
---   HALLOWEEN / TRICK OR TREAT LOGIC (240-SECOND / 4-MINUTE COOLDOWN)
+--   HALLOWEEN / TRICK OR TREAT LOGIC
 -- =======================================================================
 local unlitHouses          = {}
 local currentKnockingHouse = nil
@@ -1098,36 +1124,21 @@ UserInputService.JumpRequest:Connect(function()
 end)
 
 -- =======================================================================
---   BUILD UI (RAYFIELD GEN2 API)
+--   UI PAGES & CONTROLS (BUILT WITH HALLOW-LIB)
 -- =======================================================================
-local window = Rayfield:CreateWindow({
-	name = "OP HUB",
-	subtitle = "OP HUB",
-	sidebarLayout = true,
-	theme = "Rose",
-	showText = "OP HUB",
-	ShowText = "OP HUB"
-})
-
-window:Notify({
-	title = "OP HUB",
-	content = "OP HUB loaded successfully.",
-	duration = 4
-})
 
 -- -----------------------------------------------------------------------
 --   TAB: HALLOWEEN (TRICK OR TREAT & GRAVES)
 -- -----------------------------------------------------------------------
-local halloweenTab = window:CreateTab({
-	name = "Halloween",
-	icon = 0
-})
+local halloweenTab = window:CreateTab("Halloween", "🎃")
 
--- --- Trick or Treat Section ---
+halloweenTab:CreateSection("Trick or Treat")
+
 halloweenTab:CreateToggle({
-	name = "Auto Trick or Treat (Loop)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Auto Trick or Treat (Loop)",
+	Description = "Automatically knocks on all lit houses",
+	Default = false,
+	Callback = function(value)
 		autoTotEnabled = value
 		if autoTotEnabled then
 			task.spawn(function()
@@ -1141,8 +1152,9 @@ halloweenTab:CreateToggle({
 })
 
 halloweenTab:CreateButton({
-	name = "Trick or Treat All Houses (Once)",
-	callback = function()
+	Name = "Trick or Treat All Houses (Once)",
+	Description = "Sweeps all lit houses one time",
+	Callback = function()
 		task.spawn(function()
 			runTrickOrTreatSweep(true)
 		end)
@@ -1150,23 +1162,22 @@ halloweenTab:CreateButton({
 })
 
 halloweenTab:CreateSlider({
-	name = "House Delay",
-	range = { 0.5, 5 },
-	increment = 0.1,
-	suffix = " s",
-	currentValue = 1.5,
-	callback = function(val)
+	Name = "House Delay (Seconds)",
+	Min = 1,
+	Max = 5,
+	Default = 2,
+	Callback = function(val)
 		totDelay = val
 	end
 })
 
-halloweenTab:CreateDivider()
+halloweenTab:CreateSection("Auto Dig Graves")
 
--- --- Auto Dig Grave Section ---
 halloweenTab:CreateToggle({
-	name = "Auto Dig Graves (Loop)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Auto Dig Graves (Loop)",
+	Description = "Loops through and digs all grave spots",
+	Default = false,
+	Callback = function(value)
 		autoDigEnabled = value
 		if autoDigEnabled then
 			task.spawn(function()
@@ -1180,8 +1191,9 @@ halloweenTab:CreateToggle({
 })
 
 halloweenTab:CreateButton({
-	name = "Dig All Graves (Once)",
-	callback = function()
+	Name = "Dig All Graves (Once)",
+	Description = "Digs all available grave spots one time",
+	Callback = function()
 		task.spawn(function()
 			runGraveDigSweep(true)
 		end)
@@ -1189,12 +1201,11 @@ halloweenTab:CreateButton({
 })
 
 halloweenTab:CreateSlider({
-	name = "Grave Delay",
-	range = { 0.5, 5 },
-	increment = 0.1,
-	suffix = " s",
-	currentValue = 1.5,
-	callback = function(val)
+	Name = "Grave Delay (Seconds)",
+	Min = 1,
+	Max = 5,
+	Default = 2,
+	Callback = function(val)
 		digDelay = val
 	end
 })
@@ -1202,39 +1213,38 @@ halloweenTab:CreateSlider({
 -- -----------------------------------------------------------------------
 --   TAB: GARAGES
 -- -----------------------------------------------------------------------
-local garagesTab = window:CreateTab({
-	name = "Garages",
-	icon = 0
-})
+local garagesTab = window:CreateTab("Garages", "🏚️")
+
+garagesTab:CreateSection("Halloween Auction Garages")
 
 garagesTab:CreateToggle({
-	name = "Auto Start Garage 1 (10 Candy)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Auto Start Garage 1 (10 Candy)",
+	Default = false,
+	Callback = function(value)
 		autoStartGarages[1] = value
 	end
 })
 
 garagesTab:CreateToggle({
-	name = "Auto Start Garage 2 (20 Candy)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Auto Start Garage 2 (20 Candy)",
+	Default = false,
+	Callback = function(value)
 		autoStartGarages[2] = value
 	end
 })
 
 garagesTab:CreateToggle({
-	name = "Auto Start Garage 3 (30 Candy)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Auto Start Garage 3 (30 Candy)",
+	Default = false,
+	Callback = function(value)
 		autoStartGarages[3] = value
 	end
 })
 
 garagesTab:CreateToggle({
-	name = "Auto Start Garage 4 (40 Candy)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Auto Start Garage 4 (40 Candy)",
+	Default = false,
+	Callback = function(value)
 		autoStartGarages[4] = value
 	end
 })
@@ -1242,59 +1252,59 @@ garagesTab:CreateToggle({
 -- -----------------------------------------------------------------------
 --   TAB: ZOMBIES
 -- -----------------------------------------------------------------------
-local zombiesTab = window:CreateTab({
-	name = "Zombies",
-	icon = 0
-})
+local zombiesTab = window:CreateTab("Zombies", "🧟")
 
-local zombieStat = zombiesTab:CreateStat({
-	name = "Zombies on Map",
-	value = 0
-})
+zombiesTab:CreateSection("Tracking & Detection")
 
-zombiesTab:CreateDivider()
+zombiesTab:CreateParagraph({
+	Title = "Zombies on Map",
+	Content = "Scanning for entities..."
+})
 
 zombiesTab:CreateButton({
-	name = "Tween to Nearest Zombie",
-	callback = function()
+	Name = "Tween to Nearest Zombie",
+	Description = "Smoothly teleports to the closest living zombie",
+	Callback = function()
 		local n = getNearestZombie()
 		if n then tweenToZombie(n) end
 	end
 })
 
 zombiesTab:CreateButton({
-	name = "Cancel Active Motion",
-	callback = function()
+	Name = "Cancel Active Motion",
+	Description = "Stops current tween and unanchors root part",
+	Callback = function()
 		cancelCurrentTween()
 	end
 })
 
 zombiesTab:CreateSlider({
-	name = "Tween Speed",
-	range = { 30, 250 },
-	increment = 5,
-	suffix = " studs/s",
-	currentValue = 100,
-	callback = function(val)
+	Name = "Tween Speed",
+	Min = 30,
+	Max = 250,
+	Default = 100,
+	Callback = function(val)
 		tweenSpeed = val
 	end
 })
 
-zombiesTab:CreateDivider()
+zombiesTab:CreateSection("Visuals & Aim Assist")
 
 zombiesTab:CreateToggle({
-	name = "Entity Highlight (ESP)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Entity Highlight (ESP)",
+	Description = "Renders red outlines through walls",
+	Default = false,
+	Callback = function(value)
 		espEnabled = value
 		if not espEnabled then clearESP() end
 	end
 })
 
 zombiesTab:CreateToggle({
-	name = "Target Tracer Beam",
-	currentValue = false,
-	callback = function(value)
+	Name = "Target Tracer Beam",
+	Description = "Draws red line to closest target",
+	Default = false,
+	Callback = function(value)
 		tracerEnabled = value
 	end
 })
@@ -1302,28 +1312,27 @@ zombiesTab:CreateToggle({
 -- -----------------------------------------------------------------------
 --   TAB: PLAYER
 -- -----------------------------------------------------------------------
-local playerTab = window:CreateTab({
-	name = "Player",
-	icon = 0
-})
+local playerTab = window:CreateTab("Player", "👤")
+
+playerTab:CreateSection("Interaction")
 
 playerTab:CreateToggle({
-	name = "Insta Repair / Instant Hold",
-	currentValue = false,
-	callback = function(value)
+	Name = "Insta Repair / Instant Hold",
+	Description = "Makes all proximity prompts complete instantly",
+	Default = false,
+	Callback = function(value)
 		setInstantPrompts(value)
 	end
 })
 
-playerTab:CreateDivider()
+playerTab:CreateSection("Character Attributes")
 
 playerTab:CreateSlider({
-	name = "WalkSpeed",
-	range = { 16, 200 },
-	increment = 1,
-	suffix = " speed",
-	currentValue = 16,
-	callback = function(val)
+	Name = "WalkSpeed",
+	Min = 16,
+	Max = 200,
+	Default = 16,
+	Callback = function(val)
 		currentWalkSpeed = val
 		local hum = getHumanoid()
 		if hum then hum.WalkSpeed = val end
@@ -1331,12 +1340,11 @@ playerTab:CreateSlider({
 })
 
 playerTab:CreateSlider({
-	name = "Jump Power",
-	range = { 0, 300 },
-	increment = 5,
-	suffix = " power",
-	currentValue = 50,
-	callback = function(val)
+	Name = "Jump Power",
+	Min = 0,
+	Max = 300,
+	Default = 50,
+	Callback = function(val)
 		currentJumpPower = val
 		local hum = getHumanoid()
 		if hum then
@@ -1347,42 +1355,42 @@ playerTab:CreateSlider({
 })
 
 playerTab:CreateSlider({
-	name = "World Gravity",
-	range = { 0, 500 },
-	increment = 10,
-	suffix = " grav",
-	currentValue = Workspace.Gravity,
-	callback = function(val)
+	Name = "World Gravity",
+	Min = 0,
+	Max = 500,
+	Default = math.floor(Workspace.Gravity),
+	Callback = function(val)
 		currentGravity = val
 		Workspace.Gravity = val
 	end
 })
 
 playerTab:CreateSlider({
-	name = "Camera FOV",
-	range = { 40, 120 },
-	increment = 1,
-	suffix = " deg",
-	currentValue = camera.FieldOfView,
-	callback = function(val)
+	Name = "Camera FOV",
+	Min = 40,
+	Max = 120,
+	Default = math.floor(camera.FieldOfView),
+	Callback = function(val)
 		camera.FieldOfView = val
 	end
 })
 
-playerTab:CreateDivider()
+playerTab:CreateSection("Utility & Visuals")
 
 playerTab:CreateToggle({
-	name = "Infinite Jump",
-	currentValue = false,
-	callback = function(value)
+	Name = "Infinite Jump",
+	Description = "Allows unlimited jumps in air",
+	Default = false,
+	Callback = function(value)
 		infJumpEnabled = value
 	end
 })
 
 playerTab:CreateToggle({
-	name = "Anti-AFK Protection",
-	currentValue = false,
-	callback = function(value)
+	Name = "Anti-AFK Protection",
+	Description = "Prevents 20-minute idle kicks",
+	Default = false,
+	Callback = function(value)
 		antiAfkEnabled = value
 		if antiAfkEnabled then
 			antiAfkConn = localPlayer.Idled:Connect(function()
@@ -1401,9 +1409,10 @@ playerTab:CreateToggle({
 })
 
 playerTab:CreateToggle({
-	name = "Fullbright / Clear Fog",
-	currentValue = false,
-	callback = function(value)
+	Name = "Fullbright / Clear Fog",
+	Description = "Disables shadows and clears dark atmosphere",
+	Default = false,
+	Callback = function(value)
 		fullbrightEnabled = value
 		if fullbrightEnabled then
 			Lighting.Brightness = 2
@@ -1418,8 +1427,9 @@ playerTab:CreateToggle({
 })
 
 playerTab:CreateButton({
-	name = "Respawn Character",
-	callback = function()
+	Name = "Respawn Character",
+	Description = "Kills character to force respawn",
+	Callback = function()
 		local hum = getHumanoid()
 		if hum then hum.Health = 0 end
 	end
@@ -1428,44 +1438,45 @@ playerTab:CreateButton({
 -- -----------------------------------------------------------------------
 --   TAB: MOVEMENT
 -- -----------------------------------------------------------------------
-local movementTab = window:CreateTab({
-	name = "Movement",
-	icon = 0
-})
+local movementTab = window:CreateTab("Movement", "⚡")
+
+movementTab:CreateSection("Flight")
 
 movementTab:CreateToggle({
-	name = "Fly Mode",
-	currentValue = false,
-	callback = function(value)
+	Name = "Fly Mode",
+	Description = "Controls: WASD + Space (Up) + LeftCtrl (Down)",
+	Default = false,
+	Callback = function(value)
 		setFly(value)
 	end
 })
 
 movementTab:CreateSlider({
-	name = "Fly Speed",
-	range = { 10, 200 },
-	increment = 5,
-	suffix = " speed",
-	currentValue = 60,
-	callback = function(val)
+	Name = "Fly Speed",
+	Min = 10,
+	Max = 200,
+	Default = 60,
+	Callback = function(val)
 		flySpeed = val
 	end
 })
 
-movementTab:CreateDivider()
+movementTab:CreateSection("Physics Bypass")
 
 movementTab:CreateToggle({
-	name = "Noclip",
-	currentValue = false,
-	callback = function(value)
+	Name = "Noclip",
+	Description = "Walk through walls and obstacles",
+	Default = false,
+	Callback = function(value)
 		setNoclip(value)
 	end
 })
 
 movementTab:CreateToggle({
-	name = "Walk On Water",
-	currentValue = false,
-	callback = function(value)
+	Name = "Walk On Water",
+	Description = "Surfaces character above water lakes",
+	Default = false,
+	Callback = function(value)
 		setWalkOnWater(value)
 	end
 })
@@ -1473,40 +1484,40 @@ movementTab:CreateToggle({
 -- -----------------------------------------------------------------------
 --   TAB: FUN & FX
 -- -----------------------------------------------------------------------
-local funTab = window:CreateTab({
-	name = "Fun / FX",
-	icon = 0
-})
+local funTab = window:CreateTab("Fun / FX", "✨")
+
+funTab:CreateSection("Effects & Animations")
 
 funTab:CreateToggle({
-	name = "Ragdoll Mode",
-	currentValue = false,
-	callback = function(value)
+	Name = "Ragdoll Mode",
+	Default = false,
+	Callback = function(value)
 		setRagdoll(value)
 	end
 })
 
 funTab:CreateToggle({
-	name = "Jump & Fall FX (Synced)",
-	currentValue = false,
-	callback = function(value)
+	Name = "Jump & Fall FX (Synced)",
+	Default = false,
+	Callback = function(value)
 		setLowGravFX(value)
 	end
 })
 
 funTab:CreateToggle({
-	name = "Matrix Rain Overlay",
-	currentValue = false,
-	callback = function(value)
+	Name = "Matrix Rain Overlay",
+	Default = false,
+	Callback = function(value)
 		setMatrix(value)
 	end
 })
 
-funTab:CreateDivider()
+funTab:CreateSection("Actions")
 
 funTab:CreateButton({
-	name = "Explode Me",
-	callback = function()
+	Name = "Explode Me",
+	Description = "Visual explosion in place",
+	Callback = function()
 		explodeMe()
 	end
 })
@@ -1514,10 +1525,9 @@ funTab:CreateButton({
 -- -----------------------------------------------------------------------
 --   TAB: TPS
 -- -----------------------------------------------------------------------
-local tpsTab = window:CreateTab({
-	name = "TPs",
-	icon = 0
-})
+local tpsTab = window:CreateTab("TPs", "📍")
+
+tpsTab:CreateSection("Area Locations")
 
 local CustomTargets = {
 	["Shopping Mall"] = function(area)
@@ -1616,11 +1626,10 @@ local function buildTPs()
 
 	for _, areaFolder in ipairs(areasFolder:GetChildren()) do
 		tpsTab:CreateButton({
-			name = "TP " .. areaFolder.Name,
-			callback = function()
+			Name = "TP " .. areaFolder.Name,
+			Callback = function()
 				if areaFolder.Name == "Shopping Mall" then
 					task.spawn(function()
-						-- Step 1: Teleport to Junk Yard's Lost and Found Box first
 						local junkYard = areasFolder:FindFirstChild("Junk Yard") or areasFolder:FindFirstChild("Junkyard")
 						if junkYard then
 							local jyTarget = resolveAreaTarget(junkYard)
@@ -1630,7 +1639,6 @@ local function buildTPs()
 							end
 						end
 
-						-- Step 2: Teleport into Shopping Mall
 						local mallTarget = resolveAreaTarget(areaFolder)
 						if mallTarget then
 							teleportToTarget(mallTarget, "Shopping Mall", 4.5)
@@ -1661,22 +1669,69 @@ end
 
 buildTPs()
 
+-- -----------------------------------------------------------------------
+--   TAB: SETTINGS (WINDOW MANAGEMENT & UNLOAD)
+-- -----------------------------------------------------------------------
+local settingsTab = window:CreateTab("Settings", "⚙️")
+
+settingsTab:CreateSection("Window Management")
+
+settingsTab:CreateButton({
+	Name = "Destroy UI",
+	Description = "Completely unloads and closes the script",
+	Callback = function()
+		window:Destroy()
+	end
+})
+
+settingsTab:CreateParagraph({
+	Title = "Hallow Library Info",
+	Content = "Jack-O'-Lantern themed UI system crafted for smooth animations, custom themes, and fast execution."
+})
+
 -- =======================================================================
---   DYNAMIC ENTITY COUNTER
+--   DYNAMIC ENTITY COUNTER (UPDATES ZOMBIE PARAGRAPH)
 -- =======================================================================
 task.spawn(function()
 	while true do
 		local count = #getZombies()
 		pcall(function()
-			zombieStat:Set(count)
+			local main = parentGui:FindFirstChild("HallowLib_Main")
+			if main then
+				local page = main:FindFirstChild("Zombies_Page", true)
+				if page then
+					for _, card in ipairs(page:GetChildren()) do
+						local tLbl = card:FindFirstChildOfClass("TextLabel")
+						if tLbl and tLbl.Text == "Zombies on Map" then
+							for _, child in ipairs(card:GetChildren()) do
+								if child:IsA("TextLabel") and child ~= tLbl then
+									child.Text = tostring(count) .. " zombies currently active on map."
+								end
+							end
+						end
+					end
+				end
+			end
 		end)
-		task.wait(0.5)
+		task.wait(1)
 	end
 end)
 
--- Toggle Menu Keybind (Right Control)
+-- =======================================================================
+--   KEYBIND TOGGLE (RIGHT CONTROL)
+-- =======================================================================
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
-		window:ToggleHide()
+		local mainGui = parentGui:FindFirstChild("HallowLib_Main")
+		if mainGui then
+			local mainFrame = mainGui:FindFirstChild("MainFrame")
+			local reopenBtn = mainGui:FindFirstChild("HallowPumpkinReopen")
+			if mainFrame then
+				mainFrame.Visible = not mainFrame.Visible
+				if reopenBtn then
+					reopenBtn.Visible = not mainFrame.Visible
+				end
+			end
+		end
 	end
 end)
