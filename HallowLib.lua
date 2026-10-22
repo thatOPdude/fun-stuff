@@ -164,7 +164,7 @@ function Hallow:CreateWindow(settings)
 
 	initNotifyHolder(ScreenGui)
 
-	-- Intro animation
+	-- Splash Intro
 	local SplashContainer = Instance.new("Frame")
 	SplashContainer.AnchorPoint = Vector2.new(0.5, 0.5)
 	SplashContainer.Position = UDim2.new(0.5, 0, 0.45, 0)
@@ -193,7 +193,7 @@ function Hallow:CreateWindow(settings)
 	SplashTitle.BackgroundTransparency = 1
 	SplashTitle.Parent = SplashContainer
 
-	-- Main Frame
+	-- Main Window Frame
 	local MainFrame = Instance.new("Frame")
 	MainFrame.Name = "MainFrame"
 	MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -246,7 +246,6 @@ function Hallow:CreateWindow(settings)
 	TopHider.BorderSizePixel = 0
 	TopHider.Parent = TopBar
 
-	-- Centered Title
 	local LogoTitle = Instance.new("TextLabel")
 	LogoTitle.Text = "🎃 " .. string.upper(winTitle)
 	LogoTitle.Font = Enum.Font.GothamBold
@@ -259,7 +258,7 @@ function Hallow:CreateWindow(settings)
 	LogoTitle.BackgroundTransparency = 1
 	LogoTitle.Parent = TopBar
 
-	-- Close & Minimize
+	-- TopBar Buttons
 	local CloseBtn = Instance.new("TextButton")
 	CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 	CloseBtn.Position = UDim2.new(1, -36, 0, 9)
@@ -290,17 +289,18 @@ function Hallow:CreateWindow(settings)
 	local MinCorner = Instance.new("UICorner", MinBtn)
 	MinCorner.CornerRadius = UDim.new(0, 6)
 
-	-- Floating Circular Re-open Widget
+	-- ===================================================================
+	--   TOP-MIDDLE CIRCULAR PUMPKIN RE-OPEN BUTTON (CENTERED)
+	-- ===================================================================
 	local ReopenBtn = Instance.new("TextButton")
 	ReopenBtn.Name = "HallowPumpkinReopen"
 	ReopenBtn.AnchorPoint = Vector2.new(0.5, 0)
 	ReopenBtn.Position = UDim2.new(0.5, 0, 0, -60)
-	ReopenBtn.Size = UDim2.new(0, 44, 0, 44)
+	ReopenBtn.Size = UDim2.new(0, 46, 0, 46)
 	ReopenBtn.BackgroundColor3 = Color3.fromRGB(28, 11, 4)
 	ReopenBtn.BorderSizePixel = 0
 	ReopenBtn.AutoButtonColor = false
-	ReopenBtn.Text = "🎃"
-	ReopenBtn.TextSize = 24
+	ReopenBtn.Text = ""
 	ReopenBtn.Visible = false
 	ReopenBtn.Parent = ScreenGui
 
@@ -310,6 +310,20 @@ function Hallow:CreateWindow(settings)
 	local ReopenStroke = Instance.new("UIStroke", ReopenBtn)
 	ReopenStroke.Thickness = 1.8
 	ReopenStroke.Color = Color3.fromRGB(255, 150, 30)
+
+	-- Centered icon label with -2px bearing correction
+	local ReopenIcon = Instance.new("TextLabel")
+	ReopenIcon.Name = "PumpkinIcon"
+	ReopenIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+	ReopenIcon.Position = UDim2.new(0.5, -2, 0.5, 0)
+	ReopenIcon.Size = UDim2.new(1, 0, 1, 0)
+	ReopenIcon.BackgroundTransparency = 1
+	ReopenIcon.Text = "🎃"
+	ReopenIcon.Font = Enum.Font.GothamBold
+	ReopenIcon.TextSize = 24
+	ReopenIcon.TextXAlignment = Enum.TextXAlignment.Center
+	ReopenIcon.TextYAlignment = Enum.TextYAlignment.Center
+	ReopenIcon.Parent = ReopenBtn
 
 	ReopenBtn.MouseEnter:Connect(function()
 		TweenService:Create(ReopenBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(48, 19, 7)}):Play()
@@ -445,7 +459,7 @@ function Hallow:CreateWindow(settings)
 	local PagesFolder = Instance.new("Folder", Body)
 	PagesFolder.Name = "Pages"
 
-	-- Intro
+	-- Intro Sequence
 	task.spawn(function()
 		TweenService:Create(SplashPumpkin, TweenInfo.new(0.85, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 75}):Play()
 		task.wait(0.35)
@@ -463,7 +477,6 @@ function Hallow:CreateWindow(settings)
 		}):Play()
 	end)
 
-	-- Window Methods
 	local WindowHandler = { CurrentTab = nil }
 
 	function WindowHandler:Destroy()
@@ -590,7 +603,6 @@ function Hallow:CreateWindow(settings)
 			return Card, cStroke
 		end
 
-		-- SECTION
 		function TabElements:CreateSection(secName)
 			local sec = Instance.new("Frame")
 			sec.Size = UDim2.new(1, -10, 0, 30)
@@ -609,7 +621,6 @@ function Hallow:CreateWindow(settings)
 			sLbl.Parent = sec
 		end
 
-		-- BUTTON
 		function TabElements:CreateButton(opts)
 			opts = opts or {}
 			local name = opts.Name or "Button"
@@ -668,7 +679,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- TOGGLE
 		function TabElements:CreateToggle(opts)
 			opts = opts or {}
 			local name = opts.Name or "Toggle"
@@ -742,7 +752,6 @@ function Hallow:CreateWindow(settings)
 			Switch.MouseButton1Click:Connect(toggle)
 		end
 
-		-- SLIDER
 		function TabElements:CreateSlider(opts)
 			opts = opts or {}
 			local name = opts.Name or "Slider"
@@ -827,7 +836,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- DROPDOWN
 		function TabElements:CreateDropdown(opts)
 			opts = opts or {}
 			local name = opts.Name or "Dropdown"
@@ -929,7 +937,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- TEXT INPUT
 		function TabElements:CreateInput(opts)
 			opts = opts or {}
 			local name = opts.Name or "Input"
@@ -971,7 +978,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- KEYBIND
 		function TabElements:CreateKeybind(opts)
 			opts = opts or {}
 			local name = opts.Name or "Keybind"
@@ -1024,7 +1030,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- PARAGRAPH
 		function TabElements:CreateParagraph(opts)
 			opts = opts or {}
 			local title = opts.Title or "Information"
