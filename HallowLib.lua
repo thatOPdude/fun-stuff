@@ -27,7 +27,6 @@ local Hallow = {
 	}
 }
 
--- Sound Player Helper
 local function playSound(soundId, pitch, volume)
 	pcall(function()
 		local s = Instance.new("Sound")
@@ -258,7 +257,7 @@ function Hallow:CreateWindow(settings)
 	LogoTitle.BackgroundTransparency = 1
 	LogoTitle.Parent = TopBar
 
-	-- Close & Minimize Buttons
+	-- Close & Minimize
 	local CloseBtn = Instance.new("TextButton")
 	CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 	CloseBtn.Position = UDim2.new(1, -36, 0, 9)
@@ -289,7 +288,7 @@ function Hallow:CreateWindow(settings)
 	local MinCorner = Instance.new("UICorner", MinBtn)
 	MinCorner.CornerRadius = UDim.new(0, 6)
 
-	-- Floating Pumpkin Re-open Button
+	-- Floating Pumpkin Reopen Button
 	local ReopenBtn = Instance.new("TextButton")
 	ReopenBtn.Name = "HallowPumpkinReopen"
 	ReopenBtn.AnchorPoint = Vector2.new(0.5, 0)
@@ -453,9 +452,7 @@ function Hallow:CreateWindow(settings)
 		}):Play()
 	end)
 
-	-- ===================================================================
-	--   TAB CREATION & WINDOW METHODS (WITH BOLD GLOW HOVER)
-	-- ===================================================================
+	-- Tab Management
 	local WindowHandler = { CurrentTab = nil }
 	local TabList = {}
 
@@ -470,7 +467,7 @@ function Hallow:CreateWindow(settings)
 		TabBtn.Name = tabName .. "_Btn"
 		TabBtn.Size = UDim2.new(1, 0, 0, 42)
 		TabBtn.BackgroundColor3 = Color3.fromRGB(60, 25, 9)
-		TabBtn.BackgroundTransparency = 0.999 -- Active for mouse raycasts
+		TabBtn.BackgroundTransparency = 0.999
 		TabBtn.BorderSizePixel = 0
 		TabBtn.AutoButtonColor = false
 		TabBtn.Text = ""
@@ -479,7 +476,6 @@ function Hallow:CreateWindow(settings)
 		local TabCorner = Instance.new("UICorner", TabBtn)
 		TabCorner.CornerRadius = UDim.new(0, 8)
 
-		-- Bold Glow Stroke on the Tab Button
 		local TabStroke = Instance.new("UIStroke", TabBtn)
 		TabStroke.Thickness = 1.3
 		TabStroke.Color = Color3.fromRGB(220, 110, 20)
@@ -545,7 +541,6 @@ function Hallow:CreateWindow(settings)
 		}
 		table.insert(TabList, tabInfo)
 
-		-- Tab Activation (Click)
 		local function activateTab()
 			WindowHandler.CurrentTab = tabName
 			for _, tab in ipairs(TabList) do
@@ -588,47 +583,21 @@ function Hallow:CreateWindow(settings)
 
 		TabBtn.MouseButton1Click:Connect(activateTab)
 
-		-- BOLD HOVER VISUALS
 		TabBtn.MouseEnter:Connect(function()
 			if WindowHandler.CurrentTab ~= tabName then
-				-- 1. Bold Glowing Amber Stroke
-				TweenService:Create(TabStroke, TweenInfo.new(0.18), {
-					Color = Color3.fromRGB(220, 110, 20),
-					Transparency = 0
-				}):Play()
-				-- 2. Clear visible amber pill background
-				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
-					BackgroundColor3 = Color3.fromRGB(60, 25, 9),
-					BackgroundTransparency = 0.15
-				}):Play()
-				-- 3. Bright text
-				TweenService:Create(TabTitle, TweenInfo.new(0.18), {
-					TextColor3 = Color3.fromRGB(255, 240, 210)
-				}):Play()
-				-- 4. Indicator bar peeks out
-				TweenService:Create(TabIndicator, TweenInfo.new(0.18), {
-					Size = UDim2.new(0, 3, 0, 14),
-					BackgroundTransparency = 0
-				}):Play()
+				TweenService:Create(TabStroke, TweenInfo.new(0.18), {Color = Color3.fromRGB(220, 110, 20), Transparency = 0}):Play()
+				TweenService:Create(TabBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(60, 25, 9), BackgroundTransparency = 0.15}):Play()
+				TweenService:Create(TabTitle, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(255, 240, 210)}):Play()
+				TweenService:Create(TabIndicator, TweenInfo.new(0.18), {Size = UDim2.new(0, 3, 0, 14), BackgroundTransparency = 0}):Play()
 			end
 		end)
 
 		TabBtn.MouseLeave:Connect(function()
 			if WindowHandler.CurrentTab ~= tabName then
-				-- Smoothly fade back out
-				TweenService:Create(TabStroke, TweenInfo.new(0.18), {
-					Transparency = 1
-				}):Play()
-				TweenService:Create(TabBtn, TweenInfo.new(0.18), {
-					BackgroundTransparency = 0.999
-				}):Play()
-				TweenService:Create(TabTitle, TweenInfo.new(0.18), {
-					TextColor3 = Color3.fromRGB(180, 135, 110)
-				}):Play()
-				TweenService:Create(TabIndicator, TweenInfo.new(0.18), {
-					Size = UDim2.new(0, 3, 0, 0),
-					BackgroundTransparency = 1
-				}):Play()
+				TweenService:Create(TabStroke, TweenInfo.new(0.18), {Transparency = 1}):Play()
+				TweenService:Create(TabBtn, TweenInfo.new(0.18), {BackgroundTransparency = 0.999}):Play()
+				TweenService:Create(TabTitle, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(180, 135, 110)}):Play()
+				TweenService:Create(TabIndicator, TweenInfo.new(0.18), {Size = UDim2.new(0, 3, 0, 0), BackgroundTransparency = 1}):Play()
 			end
 		end)
 
@@ -811,13 +780,35 @@ function Hallow:CreateWindow(settings)
 			Switch.MouseButton1Click:Connect(toggle)
 		end
 
+		-- ===============================================================
+		--   SLIDER: FORCED DECIMAL INTERVALLING (0.1, 0.2, 0.3...)
+		-- ===============================================================
 		function TabElements:CreateSlider(opts)
 			opts = opts or {}
 			local name = opts.Name or "Slider"
-			local min = opts.Min or 0
-			local max = opts.Max or 100
-			local def = math.clamp(opts.Default or min, min, max)
+			local min = tonumber(opts.Min) or 0
+			local max = tonumber(opts.Max) or 100
+			local step = tonumber(opts.Increment or opts.Step) or 0.1
+			local def = tonumber(opts.Default) or min
+			def = math.clamp(def, min, max)
 			local callback = opts.Callback or function() end
+
+			local decimals = 0
+			if step < 1 then
+				local s = tostring(step)
+				local dot = s:find("%.")
+				decimals = dot and (#s - dot) or 1
+			else
+				decimals = 0
+			end
+
+			local function formatVal(v)
+				if decimals > 0 then
+					return string.format("%." .. decimals .. "f", v)
+				else
+					return tostring(math.floor(v + 0.5))
+				end
+			end
 
 			local Card = createCard(66)
 
@@ -833,7 +824,7 @@ function Hallow:CreateWindow(settings)
 			t.Parent = Card
 
 			local valLbl = Instance.new("TextLabel")
-			valLbl.Text = tostring(def)
+			valLbl.Text = formatVal(def)
 			valLbl.Font = Enum.Font.GothamBold
 			valLbl.TextSize = 14
 			valLbl.TextColor3 = Color3.fromRGB(255, 185, 40)
@@ -856,7 +847,7 @@ function Hallow:CreateWindow(settings)
 			trkCorner.CornerRadius = UDim.new(1, 0)
 
 			local Fill = Instance.new("Frame")
-			local startPercent = (def - min) / (max - min)
+			local startPercent = math.clamp((def - min) / math.max(0.0001, (max - min)), 0, 1)
 			Fill.Size = UDim2.new(startPercent, 0, 1, 0)
 			Fill.BackgroundColor3 = Color3.fromRGB(255, 140, 20)
 			Fill.BorderSizePixel = 0
@@ -868,10 +859,16 @@ function Hallow:CreateWindow(settings)
 			local sliding = false
 			local function updateFromInput(input)
 				local pos = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
-				local val = math.floor(min + ((max - min) * pos))
-				valLbl.Text = tostring(val)
-				TweenService:Create(Fill, TweenInfo.new(0.05), {Size = UDim2.new(pos, 0, 1, 0)}):Play()
-				task.spawn(callback, val)
+				local rawVal = min + ((max - min) * pos)
+				local steppedVal = math.floor((rawVal / step) + 0.5) * step
+				local clampedVal = math.clamp(steppedVal, min, max)
+
+				local strVal = formatVal(clampedVal)
+				valLbl.Text = strVal
+
+				local visualPos = math.clamp((clampedVal - min) / math.max(0.0001, (max - min)), 0, 1)
+				TweenService:Create(Fill, TweenInfo.new(0.04), {Size = UDim2.new(visualPos, 0, 1, 0)}):Play()
+				task.spawn(callback, tonumber(strVal) or clampedVal)
 			end
 
 			Track.InputBegan:Connect(function(input)
