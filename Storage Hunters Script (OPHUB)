@@ -1,6 +1,3 @@
--- made by thatOPdude this shit got fuckin auto trick or treat a lot of tps tween to zombies zombie esp and tracers and fun shi so have fun with this, also it works on solara thats what i made it with
-
-
 -- =======================================================================
 --   LOAD RAYFIELD GEN2
 -- =======================================================================
@@ -147,14 +144,12 @@ local promptConns            = {}
 local function setInstantPrompts(state)
 	instaRepairEnabled = state
 
-	-- Disconnect previous listeners
 	for _, c in ipairs(promptConns) do
 		c:Disconnect()
 	end
 	table.clear(promptConns)
 
 	if state then
-		-- 1. Force 0s on all current workspace prompts
 		for _, desc in ipairs(Workspace:GetDescendants()) do
 			if desc:IsA("ProximityPrompt") then
 				if originalHoldDurations[desc] == nil then
@@ -164,7 +159,6 @@ local function setInstantPrompts(state)
 			end
 		end
 
-		-- 2. Whenever ANY prompt appears on screen (e.g. Life Ring, Repairs), force 0s
 		local shownConn = ProximityPromptService.PromptShown:Connect(function(prompt)
 			if not instaRepairEnabled or not prompt then return end
 			if originalHoldDurations[prompt] == nil then
@@ -174,11 +168,9 @@ local function setInstantPrompts(state)
 		end)
 		table.insert(promptConns, shownConn)
 
-		-- 3. THE CORE FIX: The exact frame you press 'E', trigger it instantly via executor
 		local holdBeganConn = ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
 			if not instaRepairEnabled or not prompt then return end
 
-			-- Fire Solara's native instant prompt trigger
 			if typeof(fireproximityprompt) == "function" then
 				pcall(function() fireproximityprompt(prompt, 1, true) end)
 				pcall(function() fireproximityprompt(prompt, 0, true) end)
@@ -193,7 +185,6 @@ local function setInstantPrompts(state)
 		end)
 		table.insert(promptConns, holdBeganConn)
 
-		-- 4. Catch dynamically spawned items in _Carryables
 		local descConn = Workspace.DescendantAdded:Connect(function(desc)
 			if desc:IsA("ProximityPrompt") then
 				if originalHoldDurations[desc] == nil then
@@ -206,7 +197,6 @@ local function setInstantPrompts(state)
 
 		print("[InstaRepair] Enabled! All prompts will now complete instantly on tap.")
 	else
-		-- Restore original hold times when toggled off
 		for prompt, origDuration in pairs(originalHoldDurations) do
 			if prompt and prompt.Parent then
 				pcall(function()
@@ -1529,121 +1519,88 @@ local tpsTab = window:CreateTab({
 	icon = 0
 })
 
-local tpTweenSpeed = 100
-
-tpsTab:CreateSlider({
-	name = "TP Tween Speed",
-	range = { 20, 600 },
-	increment = 10,
-	suffix = " studs/s",
-	currentValue = 100,
-	callback = function(val)
-		tpTweenSpeed = val
-	end
-})
-
-tpsTab:CreateButton({
-	name = "Cancel Active Motion",
-	callback = function()
-		cancelCurrentTween()
-	end
-})
-
-tpsTab:CreateDivider()
-
 local CustomTargets = {
-	["Shipyard"] = function(area)
-		local npc = area:FindFirstChild("Steve", true)
-		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
-	end,
 	["Shopping Mall"] = function(area)
 		local spawns = area:FindFirstChild("ShoppingMallCarSpawns", true)
 		if spawns then
-			return spawns:FindFirstChildOfClass("BasePart") or spawns:FindFirstChild("Part")
+			return spawns:FindFirstChildOfClass("BasePart") or spawns:FindFirstChild("Part") or spawns:FindFirstChildWhichIsA("BasePart", true)
 		end
-	end,
-	["The Mines"] = function(area)
-		local npc = area:FindFirstChild("Mining Supervisor", true)
-		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
-	end,
-	["Power Plant"] = function(area)
-		local npc = area:FindFirstChild("Mad Scientist", true)
-		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
-	end,
-	["Business Bay"] = function(area)
-		local npc = area:FindFirstChild("Michael", true)
-		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("UpperTorso") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
-	end,
-	["Junk Yard"] = function(area)
-		local npc = area:FindFirstChild("Billy", true)
-		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("UpperTorso") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
-	end,
-	["Lucky Beach"] = function(area)
-		local npc = area:FindFirstChild("Sam", true)
-		return npc and (npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Torso") or npc.PrimaryPart)
 	end,
 	["Carnanval"] = function(area)
 		local npcFolder = area:FindFirstChild("NPC")
-		local monkey = npcFolder and npcFolder:FindFirstChild("Circus Monkey") or area:FindFirstChild("Circus Monkey", true)
-		return monkey and (monkey:FindFirstChild("HumanoidRootPart") or monkey:FindFirstChild("UpperTorso") or monkey:FindFirstChild("Torso") or monkey.PrimaryPart)
+		local monkey = (npcFolder and npcFolder:FindFirstChild("Circus Monkey")) or area:FindFirstChild("Circus Monkey", true)
+		return monkey and (monkey:FindFirstChild("HumanoidRootPart") or monkey:FindFirstChild("UpperTorso") or monkey:FindFirstChild("Torso") or monkey.PrimaryPart or monkey:FindFirstChildWhichIsA("BasePart", true))
 	end
 }
 
-local function resolveTarget(areaFolder)
-	local customFinder = CustomTargets[areaFolder.Name]
-	if customFinder then
-		local target = customFinder(areaFolder)
-		if target then return target end
-	end
+local function resolveAreaTarget(areaFolder)
+	if not areaFolder then return nil end
+	local name = areaFolder.Name
 
-	local box = areaFolder:FindFirstChild("Lost and Found Box", true)
-	if box then
-		local cube = box:FindFirstChild("Meshes/LNF_Cube", true)
-		if cube and cube:IsA("BasePart") then
-			return cube
+	-- 1. Carnanval Exception: Target Circus Monkey
+	if name == "Carnanval" then
+		local customFinder = CustomTargets["Carnanval"]
+		local monkey = customFinder and customFinder(areaFolder)
+		if monkey then
+			if monkey:IsA("Model") then return monkey:GetPivot() end
+			if monkey:IsA("BasePart") then return monkey.CFrame end
 		end
 	end
+
+	-- 2. Shopping Mall Exception: Target ShoppingMallCarSpawns
+	if name == "Shopping Mall" then
+		local customFinder = CustomTargets["Shopping Mall"]
+		local spawnTarget = customFinder and customFinder(areaFolder)
+		if spawnTarget then
+			if spawnTarget:IsA("Model") then return spawnTarget:GetPivot() end
+			if spawnTarget:IsA("BasePart") then return spawnTarget.CFrame end
+		end
+	end
+
+	-- 3. Default: Find "Lost and Found Box" for all other areas
+	local box = areaFolder:FindFirstChild("Lost and Found Box", true)
+	if box then
+		local cube = box:FindFirstChild("Meshes/LNF_Cube", true) or box:FindFirstChild("LNF_Cube", true)
+		if cube and cube:IsA("BasePart") then
+			return cube.CFrame
+		end
+		if box:IsA("Model") then
+			return box:GetPivot()
+		elseif box:IsA("BasePart") then
+			return box.CFrame
+		end
+		local anyPart = box:FindFirstChildWhichIsA("BasePart", true)
+		if anyPart then return anyPart.CFrame end
+	end
+
+	-- 4. Fallback if area has no box
+	local anyPart = areaFolder:FindFirstChildWhichIsA("BasePart", true)
+	if anyPart then return anyPart.CFrame end
+	if areaFolder:IsA("Model") then return areaFolder:GetPivot() end
 
 	return nil
 end
 
-local function tweenToDestination(targetCFrame, destinationName)
-	local myHRP = getHRP()
-	if not myHRP then return end
+local function teleportToTarget(targetCFrame, name, yOffset)
+	local hrp = getHRP()
+	if not hrp or not targetCFrame then return end
 
 	cancelCurrentTween()
 
-	local targetPos = targetCFrame.Position + Vector3.new(0, 3, 0)
-	local destinationCFrame = CFrame.new(targetPos)
-	local distance = (myHRP.Position - targetPos).Magnitude
-	local duration = math.max(0.15, distance / math.max(1, tpTweenSpeed))
+	local offset = yOffset or 4.5
+	local destCFrame = CFrame.new(targetCFrame.Position + Vector3.new(0, offset, 0))
 
-	myHRP.Anchored = true
-	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
-	activeTween = TweenService:Create(myHRP, tweenInfo, { CFrame = destinationCFrame })
+	hrp.CFrame = destCFrame
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
 
-	activeTween.Completed:Connect(function(state)
-		if state == Enum.PlaybackState.Completed or state == Enum.PlaybackState.Cancelled then
-			if myHRP and myHRP.Parent then
-				myHRP.Anchored = false
-			end
-			activeTween = nil
-			if state == Enum.PlaybackState.Completed then
-				window:Notify({
-					title = "Arrived",
-					content = "Reached " .. destinationName,
-					duration = 3
-				})
-			end
-		end
-	end)
-
-	activeTween:Play()
-	window:Notify({
-		title = "Tweening",
-		content = "Traveling to " .. destinationName .. "...",
-		duration = 2
-	})
+	if name then
+		window:Notify({
+			title = "Teleport",
+			content = "Teleported to " .. name,
+			duration = 2
+		})
+	end
 end
 
 local function buildTPs()
@@ -1661,24 +1618,41 @@ local function buildTPs()
 		tpsTab:CreateButton({
 			name = "TP " .. areaFolder.Name,
 			callback = function()
-				local target = resolveTarget(areaFolder)
-				if target then
-					local targetCFrame = nil
-					if target:IsA("BasePart") then
-						targetCFrame = target.CFrame
-					elseif target:IsA("Model") then
-						targetCFrame = target:GetPivot()
-					end
+				if areaFolder.Name == "Shopping Mall" then
+					task.spawn(function()
+						-- Step 1: Teleport to Junk Yard's Lost and Found Box first
+						local junkYard = areasFolder:FindFirstChild("Junk Yard") or areasFolder:FindFirstChild("Junkyard")
+						if junkYard then
+							local jyTarget = resolveAreaTarget(junkYard)
+							if jyTarget then
+								teleportToTarget(jyTarget, "Junk Yard (Transit)", 4.5)
+								task.wait(0.4)
+							end
+						end
 
-					if targetCFrame then
-						tweenToDestination(targetCFrame, areaFolder.Name)
-					end
+						-- Step 2: Teleport into Shopping Mall
+						local mallTarget = resolveAreaTarget(areaFolder)
+						if mallTarget then
+							teleportToTarget(mallTarget, "Shopping Mall", 4.5)
+						else
+							window:Notify({
+								title = "Teleport Failed",
+								content = "Could not find destination for Shopping Mall",
+								duration = 3
+							})
+						end
+					end)
 				else
-					window:Notify({
-						title = "Teleport Failed",
-						content = "Could not find destination for " .. areaFolder.Name,
-						duration = 3
-					})
+					local targetCFrame = resolveAreaTarget(areaFolder)
+					if targetCFrame then
+						teleportToTarget(targetCFrame, areaFolder.Name, 4.5)
+					else
+						window:Notify({
+							title = "Teleport Failed",
+							content = "Could not find destination for " .. areaFolder.Name,
+							duration = 3
+						})
+					end
 				end
 			end
 		})
