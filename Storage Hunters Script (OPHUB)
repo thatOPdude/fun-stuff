@@ -9,13 +9,14 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 -- =======================================================================
 --   SERVICES
 -- =======================================================================
-local TweenService      = game:GetService("TweenService")
-local Players           = game:GetService("Players")
-local Workspace         = game:GetService("Workspace")
-local RunService        = game:GetService("RunService")
-local Lighting          = game:GetService("Lighting")
-local UserInputService  = game:GetService("UserInputService")
-local VirtualUser       = game:GetService("VirtualUser")
+local TweenService         = game:GetService("TweenService")
+local Players              = game:GetService("Players")
+local Workspace            = game:GetService("Workspace")
+local RunService           = game:GetService("RunService")
+local Lighting             = game:GetService("Lighting")
+local UserInputService     = game:GetService("UserInputService")
+local VirtualUser          = game:GetService("VirtualUser")
+local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 
 local localPlayer = Players.LocalPlayer
 local camera      = Workspace.CurrentCamera
@@ -85,6 +86,14 @@ local autoDigEnabled      = false
 local digLoopRunning      = false
 local digDelay            = 1.5
 
+-- Garages Auto-Start State
+local autoStartGarages = {
+	[1] = false,
+	[2] = false,
+	[3] = false,
+	[4] = false
+}
+
 -- =======================================================================
 --   HELPER & RECOVERY FUNCTIONS
 -- =======================================================================
@@ -107,10 +116,155 @@ local function applyCharacterSettings(char)
 	end
 end
 
+local function interactWithPrompt(prompt)
+	if not prompt or not prompt.Parent then return end
+
+	if typeof(fireproximityprompt) == "function" then
+		pcall(function()
+			fireproximityprompt(prompt, 1, true)
+		end)
+		pcall(function()
+			fireproximityprompt(prompt)
+		end)
+	else
+		pcall(function()
+			prompt:InputHoldBegin()
+			task.wait((prompt.HoldDuration or 0.5) + 0.1)
+			prompt:InputHoldEnd()
+		end)
+	end
+end
+
+-- =======================================================================
+--   INSTANT PROMPT / INSTA-REPAIR LOGIC (HOOKS HOLD-BEGAN & OVERWRITES)
+-- =======================================================================
+local ProximityPromptService = game:GetService("ProximityPromptService")
+
+local instaRepairEnabled     = false
+local originalHoldDurations  = {}
+local promptConns            = {}
+
+local function setInstantPrompts(state)
+	instaRepairEnabled = state
+
+	-- Disconnect previous listeners
+	for _, c in ipairs(promptConns) do
+		c:Disconnect()
+	end
+	table.clear(promptConns)
+
+	if state then
+		-- 1. Force 0s on all current workspace prompts
+		for _, desc in ipairs(Workspace:GetDescendants()) do
+			if desc:IsA("ProximityPrompt") then
+				if originalHoldDurations[desc] == nil then
+					originalHoldDurations[desc] = desc.HoldDuration
+				end
+				desc.HoldDuration = 0
+			end
+		end
+
+		-- 2. Whenever ANY prompt appears on screen (e.g. Life Ring, Repairs), force 0s
+		local shownConn = ProximityPromptService.PromptShown:Connect(function(prompt)
+			if not instaRepairEnabled or not prompt then return end
+			if originalHoldDurations[prompt] == nil then
+				originalHoldDurations[prompt] = prompt.HoldDuration
+			end
+			prompt.HoldDuration = 0
+		end)
+		table.insert(promptConns, shownConn)
+
+		-- 3. THE CORE FIX: The exact frame you press 'E', trigger it instantly via executor
+		local holdBeganConn = ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+			if not instaRepairEnabled or not prompt then return end
+
+			-- Fire Solara's native instant prompt trigger
+			if typeof(fireproximityprompt) == "function" then
+				pcall(function() fireproximityprompt(prompt, 1, true) end)
+				pcall(function() fireproximityprompt(prompt, 0, true) end)
+				pcall(function() fireproximityprompt(prompt) end)
+			else
+				pcall(function()
+					prompt:InputHoldBegin()
+					task.wait(0.02)
+					prompt:InputHoldEnd()
+				end)
+			end
+		end)
+		table.insert(promptConns, holdBeganConn)
+
+		-- 4. Catch dynamically spawned items in _Carryables
+		local descConn = Workspace.DescendantAdded:Connect(function(desc)
+			if desc:IsA("ProximityPrompt") then
+				if originalHoldDurations[desc] == nil then
+					originalHoldDurations[desc] = desc.HoldDuration
+				end
+				desc.HoldDuration = 0
+			end
+		end)
+		table.insert(promptConns, descConn)
+
+		print("[InstaRepair] Enabled! All prompts will now complete instantly on tap.")
+	else
+		-- Restore original hold times when toggled off
+		for prompt, origDuration in pairs(originalHoldDurations) do
+			if prompt and prompt.Parent then
+				pcall(function()
+					prompt.HoldDuration = origDuration
+				end)
+			end
+		end
+		table.clear(originalHoldDurations)
+		print("[InstaRepair] Disabled. Restored default hold durations.")
+	end
+end
+
+-- =======================================================================
+--   GARAGE AUTO-START LOGIC
+-- =======================================================================
+local function getGarageEnterPrompt(garageNum)
+	local debris = Workspace:FindFirstChild("_Debris")
+	local garages = debris and debris:FindFirstChild("Garages")
+	if not garages then
+		garages = Workspace:FindFirstChild("Garages", true)
+	end
+	if not garages then return nil, nil end
+
+	local garage = garages:FindFirstChild("Halloween Garage " .. tostring(garageNum))
+	if not garage then return nil, nil end
+
+	local entry = garage:FindFirstChild("EntrySquare")
+	local pPart = entry and entry:FindFirstChild("PromptPart")
+	local prompt = pPart and (pPart:FindFirstChild("EnterAuction") or pPart:FindFirstChildOfClass("ProximityPrompt"))
+
+	return prompt, pPart
+end
+
+task.spawn(function()
+	while true do
+		for garageNum = 1, 4 do
+			if autoStartGarages[garageNum] then
+				local prompt, pPart = getGarageEnterPrompt(garageNum)
+
+				if prompt and prompt.Enabled and pPart then
+					local hrp = getHRP()
+					if hrp and (hrp.Position - pPart.Position).Magnitude > (prompt.MaxActivationDistance or 10) then
+						hrp.CFrame = pPart.CFrame + Vector3.new(0, 3, 0)
+						task.wait(0.2)
+					end
+
+					interactWithPrompt(prompt)
+					task.wait(0.5)
+				end
+			end
+		end
+		task.wait(1)
+	end
+end)
+
 -- =======================================================================
 --   MOVEMENT / PHYSICS LOGIC
 -- =======================================================================
--- Noclip
 local function setNoclip(state)
 	noclipEnabled = state
 	if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
@@ -128,7 +282,6 @@ local function setNoclip(state)
 	end
 end
 
--- Fly
 local function getFlyDirection()
 	local cf = camera.CFrame
 	local dir = Vector3.zero
@@ -175,7 +328,6 @@ local function setFly(state)
 	end
 end
 
--- Fly Input Listeners
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
 	local k = input.KeyCode
@@ -198,7 +350,6 @@ UserInputService.InputEnded:Connect(function(input, gpe)
 	if k == Enum.KeyCode.LeftControl then flyKeys.Down = false end
 end)
 
--- Walk On Water
 local function setWalkOnWater(state)
 	walkOnWaterEnabled = state
 	if waterWalkConn then waterWalkConn:Disconnect(); waterWalkConn = nil end
@@ -578,8 +729,31 @@ local function clearESP()
 end
 
 -- =======================================================================
---   HALLOWEEN / TRICK OR TREAT LOGIC (FIXED PROMPT & CFRAME RESOLVER)
+--   HALLOWEEN / TRICK OR TREAT LOGIC (240-SECOND / 4-MINUTE COOLDOWN)
 -- =======================================================================
+local unlitHouses          = {}
+local currentKnockingHouse = nil
+local minHouseY            = 5
+local HOUSE_COOLDOWN       = 240
+
+task.spawn(function()
+	local eventsFolder = ReplicatedStorage:WaitForChild("Events", 10)
+	local uiFolder = eventsFolder and eventsFolder:WaitForChild("UI", 5)
+	local notifyRemote = (uiFolder and uiFolder:FindFirstChild("Notify")) 
+		or ReplicatedStorage:FindFirstChild("Notify", true)
+
+	if notifyRemote and notifyRemote:IsA("RemoteEvent") then
+		notifyRemote.OnClientEvent:Connect(function(msg, ...)
+			if typeof(msg) == "string" and string.find(string.lower(msg), "lights are out") then
+				if currentKnockingHouse then
+					unlitHouses[currentKnockingHouse] = tick() + HOUSE_COOLDOWN
+					print(string.format("[TrickOrTreat] '%s' lights are out! Cooldown set for 4 minutes (240s).", currentKnockingHouse.Name))
+				end
+			end
+		end)
+	end
+end)
+
 local function getHalloweenBuildingFolder()
 	local areas = Workspace:FindFirstChild("Areas")
 	if not areas then return nil end
@@ -592,26 +766,33 @@ local function getHalloweenBuildingFolder()
 	return tot:FindFirstChild("Building")
 end
 
-local function interactWithPrompt(prompt)
-	if not prompt or not prompt.Parent then return end
-
-	if typeof(fireproximityprompt) == "function" then
-		pcall(function()
-			fireproximityprompt(prompt, 1, true)
-		end)
-		pcall(function()
-			fireproximityprompt(prompt)
-		end)
-	else
-		pcall(function()
-			prompt:InputHoldBegin()
-			task.wait((prompt.HoldDuration or 0.5) + 0.1)
-			prompt:InputHoldEnd()
-		end)
+local function isHousePhysicallyLit(house)
+	if house:GetAttribute("Lit") == false or house:GetAttribute("Active") == false then
+		return false
 	end
+
+	local litVal = house:FindFirstChild("IsLit") or house:FindFirstChild("Lit")
+	if litVal and litVal:IsA("BoolValue") and not litVal.Value then
+		return false
+	end
+
+	local hasAnyLightSource = false
+	for _, desc in ipairs(house:GetDescendants()) do
+		if desc:IsA("Light") then
+			hasAnyLightSource = true
+			if desc.Enabled then
+				return true
+			end
+		end
+	end
+
+	if hasAnyLightSource then
+		return false
+	end
+
+	return true
 end
 
--- Collects every single house in Building regardless of cube naming (Cube.009, Cube.007, Main, etc.)
 local function getAllHouses()
 	local buildingFolder = getHalloweenBuildingFolder()
 	if not buildingFolder then return {} end
@@ -624,11 +805,24 @@ local function getAllHouses()
 
 		if prompt then
 			local promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) or prompt.Parent
-			table.insert(houseList, {
-				house  = house,
-				point  = promptPoint,
-				prompt = prompt
-			})
+
+			local worldPos = nil
+			if promptPoint:IsA("Attachment") then
+				worldPos = promptPoint.WorldPosition
+			elseif promptPoint:IsA("BasePart") then
+				worldPos = promptPoint.Position
+			elseif promptPoint.Parent and promptPoint.Parent:IsA("BasePart") then
+				worldPos = promptPoint.Parent.Position
+			end
+
+			if worldPos and worldPos.Y >= minHouseY then
+				table.insert(houseList, {
+					house  = house,
+					point  = promptPoint,
+					prompt = prompt,
+					pos    = worldPos
+				})
+			end
 		end
 	end
 
@@ -643,7 +837,7 @@ local function runTrickOrTreatSweep(singleRun)
 	if #houses == 0 then
 		window:Notify({
 			title = "Trick or Treat",
-			content = "No houses or prompts found in Building!",
+			content = "No valid surface houses found!",
 			duration = 3
 		})
 		totLoopRunning = false
@@ -653,14 +847,22 @@ local function runTrickOrTreatSweep(singleRun)
 	for index, houseData in ipairs(houses) do
 		if not autoTotEnabled and not singleRun then break end
 
-		local hrp = getHRP()
+		local house = houseData.house
 		local prompt = houseData.prompt
 		local targetPoint = houseData.point
+		local hrp = getHRP()
+
+		if unlitHouses[house] and tick() < unlitHouses[house] then
+			continue
+		end
+
+		if not isHousePhysicallyLit(house) then
+			continue
+		end
 
 		if hrp and prompt and prompt.Parent and targetPoint then
 			cancelCurrentTween()
 
-			-- Calculate exact WorldCFrame so Attachments aren't confused with part centers
 			local targetCFrame = nil
 			if targetPoint:IsA("Attachment") then
 				targetCFrame = targetPoint.WorldCFrame
@@ -671,15 +873,30 @@ local function runTrickOrTreatSweep(singleRun)
 			end
 
 			if targetCFrame then
-				-- Teleport 1.5 studs directly in front of the prompt point
+				if targetCFrame.Position.Y < minHouseY then
+					continue
+				end
+
+				currentKnockingHouse = house
+
 				hrp.CFrame = targetCFrame + Vector3.new(0, 1.5, 0)
 				hrp.AssemblyLinearVelocity = Vector3.zero
 				hrp.AssemblyAngularVelocity = Vector3.zero
 
-				task.wait(0.3)
-
+				task.wait(0.25)
 				interactWithPrompt(prompt)
-				task.wait(totDelay)
+				task.wait(0.35)
+
+				if unlitHouses[house] and tick() < unlitHouses[house] then
+					currentKnockingHouse = nil
+					continue
+				end
+
+				unlitHouses[house] = tick() + HOUSE_COOLDOWN
+				print(string.format("[TrickOrTreat] Successfully looted '%s'. Cooldown set for 4 minutes (240s).", house.Name))
+
+				task.wait(math.max(0, totDelay - 0.6))
+				currentKnockingHouse = nil
 			end
 		end
 	end
@@ -801,7 +1018,6 @@ local function runGraveDigSweep(singleRun)
 					hrp.AssemblyAngularVelocity = Vector3.zero
 
 					task.wait(0.3)
-
 					interactWithPrompt(prompt)
 					task.wait(digDelay)
 				end
@@ -994,6 +1210,46 @@ halloweenTab:CreateSlider({
 })
 
 -- -----------------------------------------------------------------------
+--   TAB: GARAGES
+-- -----------------------------------------------------------------------
+local garagesTab = window:CreateTab({
+	name = "Garages",
+	icon = 0
+})
+
+garagesTab:CreateToggle({
+	name = "Auto Start Garage 1 (10 Candy)",
+	currentValue = false,
+	callback = function(value)
+		autoStartGarages[1] = value
+	end
+})
+
+garagesTab:CreateToggle({
+	name = "Auto Start Garage 2 (20 Candy)",
+	currentValue = false,
+	callback = function(value)
+		autoStartGarages[2] = value
+	end
+})
+
+garagesTab:CreateToggle({
+	name = "Auto Start Garage 3 (30 Candy)",
+	currentValue = false,
+	callback = function(value)
+		autoStartGarages[3] = value
+	end
+})
+
+garagesTab:CreateToggle({
+	name = "Auto Start Garage 4 (40 Candy)",
+	currentValue = false,
+	callback = function(value)
+		autoStartGarages[4] = value
+	end
+})
+
+-- -----------------------------------------------------------------------
 --   TAB: ZOMBIES
 -- -----------------------------------------------------------------------
 local zombiesTab = window:CreateTab({
@@ -1060,6 +1316,16 @@ local playerTab = window:CreateTab({
 	name = "Player",
 	icon = 0
 })
+
+playerTab:CreateToggle({
+	name = "Insta Repair / Instant Hold",
+	currentValue = false,
+	callback = function(value)
+		setInstantPrompts(value)
+	end
+})
+
+playerTab:CreateDivider()
 
 playerTab:CreateSlider({
 	name = "WalkSpeed",
