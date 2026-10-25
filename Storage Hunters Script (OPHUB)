@@ -78,8 +78,9 @@ local keybindLabels = {}
 -- Halloween / Trick or Treat State
 local autoTotEnabled      = false
 local totLoopRunning      = false
-local totDelay            = 0.5
+local totDelay            = 0.1
 local checkLitOnly        = false
+local checkCooldowns      = false
 local unlitHouses         = {}
 local currentKnockingHouse = nil
 local minHouseY           = 3
@@ -88,7 +89,7 @@ local HOUSE_COOLDOWN      = 240
 -- Halloween / Auto Dig Grave State
 local autoDigEnabled      = false
 local digLoopRunning      = false
-local digDelay            = 0.5
+local digDelay            = 0.2
 
 -- Garages Auto-Start State
 local autoStartGarages = {
@@ -99,13 +100,13 @@ local autoStartGarages = {
 }
 
 -- =======================================================================
---   CUSTOM TP SEQUENCE (Instant TPs with Tween on House 13)
+--   CUSTOM 47-HOUSE ORDER SEQUENCE
 -- =======================================================================
 local houseOrder = {
 	39, 42, 15, 12, 23, 34, 29, 26, 50, 47,
 	35, 18, 37, 33, 49, 19, 21, 27, 28, 36,
 	7, 6,
-	{ target = 13, tween = true }, -- Tween across streaming boundary
+	{ target = 13, tween = true }, -- Tweens across streaming boundary
 	"Trick or Treat House", 8, 16, 43, 17, 10, 38, 4,
 	"Halloween Hut", 22, 2, 25, 20, 14, 11, 40, 24,
 	31, 41, 30, 44, 32, 48, 39
@@ -165,7 +166,6 @@ local function cancelCurrentTween()
 	end
 end
 
--- Fast linear travel tween with automatic noclip
 local function fastTweenTo(targetCFrame, customSpeed)
 	local hrp = getHRP()
 	if not hrp or not targetCFrame then return false end
@@ -226,6 +226,7 @@ local function fastTweenTo(targetCFrame, customSpeed)
 	return true
 end
 
+-- Robust prompt interaction with both executor bypass and hold fallback
 local function interactWithPrompt(prompt)
 	if not prompt or not prompt.Parent then return end
 
@@ -243,7 +244,7 @@ local function interactWithPrompt(prompt)
 	else
 		pcall(function()
 			prompt:InputHoldBegin()
-			task.wait((prompt.HoldDuration or 0) + 0.05)
+			task.wait(0.05)
 			prompt:InputHoldEnd()
 		end)
 	end
@@ -353,7 +354,7 @@ task.spawn(function()
 					local hrp = getHRP()
 					if hrp and (hrp.Position - pPart.Position).Magnitude > (prompt.MaxActivationDistance or 10) then
 						hrp.CFrame = pPart.CFrame + Vector3.new(0, 3, 0)
-						task.wait(0.1)
+						task.wait(0.15)
 					end
 					interactWithPrompt(prompt)
 					task.wait(0.2)
@@ -377,7 +378,7 @@ task.spawn(function()
 			if typeof(msg) == "string" and string.find(string.lower(msg), "lights are out") then
 				if currentKnockingHouse then
 					unlitHouses[currentKnockingHouse] = tick() + HOUSE_COOLDOWN
-					print(string.format("[TrickOrTreat] '%s' lights are out! Cooldown set for 4 minutes (240s).", currentKnockingHouse.Name))
+					print(string.format("[TrickOrTreat] '%s' lights are out!", currentKnockingHouse.Name))
 				end
 			end
 		end)
@@ -438,9 +439,9 @@ local function getOrderedHouses()
 
 		local house = nil
 		if typeof(targetRef) == "number" then
-			house = children[targetRef]
+			house = children[targetRef] or buildingFolder:FindFirstChild(tostring(targetRef))
 		elseif typeof(targetRef) == "string" then
-			house = buildingFolder:FindFirstChild(targetRef)
+			house = buildingFolder:FindFirstChild(targetRef) or children[tonumber(targetRef)]
 		end
 
 		if house and house:IsA("Instance") then
@@ -477,7 +478,7 @@ local function runTrickOrTreatSweep(singleRun)
 			local hrp = getHRP()
 			if not hrp then break end
 
-			if unlitHouses[house] and tick() < unlitHouses[house] then
+			if checkCooldowns and unlitHouses[house] and tick() < unlitHouses[house] then
 				continue
 			end
 
@@ -494,10 +495,10 @@ local function runTrickOrTreatSweep(singleRun)
 			local promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
 				or (prompt and prompt.Parent)
 
-			-- STAGE 1: Travel to house if prompt is unstreamed
+			-- STAGE 1: If prompt is missing at distance, travel to the house model first
 			if not promptPoint or not prompt then
 				local houseCF = getHouseCFrame(house)
-				if houseCF and houseCF.Position.Y >= minHouseY then
+				if houseCF then
 					local targetDest = houseCF + Vector3.new(0, 3, 0)
 					if shouldTween then
 						fastTweenTo(targetDest, fastTweenSpeed)
@@ -507,9 +508,9 @@ local function runTrickOrTreatSweep(singleRun)
 						hrp.AssemblyAngularVelocity = Vector3.zero
 					end
 
-					-- Dynamic poll loop: continues as soon as prompt streams in
+					-- Wait for Roblox to replicate prompt instances
 					local elapsed = 0
-					while elapsed < 0.35 do
+					while elapsed < 0.4 do
 						prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
 							or house:FindFirstChildOfClass("ProximityPrompt", true)
 						promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
@@ -521,7 +522,7 @@ local function runTrickOrTreatSweep(singleRun)
 				end
 			end
 
-			-- STAGE 2: Snap directly to prompt point
+			-- STAGE 2: Snap directly to the door prompt point
 			if promptPoint then
 				local targetCFrame = nil
 				if promptPoint:IsA("Attachment") then
@@ -532,7 +533,7 @@ local function runTrickOrTreatSweep(singleRun)
 					targetCFrame = promptPoint.Parent.CFrame
 				end
 
-				if targetCFrame and targetCFrame.Position.Y >= minHouseY then
+				if targetCFrame then
 					local targetDest = targetCFrame + Vector3.new(0, 1.5, 0)
 					if shouldTween then
 						fastTweenTo(targetDest, fastTweenSpeed)
@@ -541,22 +542,21 @@ local function runTrickOrTreatSweep(singleRun)
 						hrp.AssemblyLinearVelocity = Vector3.zero
 						hrp.AssemblyAngularVelocity = Vector3.zero
 					end
-					task.wait(0.08)
+					-- Essential pause: allows Roblox server to receive your position packet
+					task.wait(0.2)
 				end
 			end
 
-			-- STAGE 3: Trigger prompt
+			-- STAGE 3: Fire prompt and wait for server acknowledgement
 			prompt = prompt or house:FindFirstChild("TrickOrTreatPrompt", true) or house:FindFirstChildOfClass("ProximityPrompt", true)
 			if prompt then
 				interactWithPrompt(prompt)
-				task.wait(0.2)
+				-- Essential hold: prevents teleporting away before server validates prompt
+				task.wait(0.35)
 
-				if unlitHouses[house] and tick() < unlitHouses[house] then
-					currentKnockingHouse = nil
-					continue
+				if checkCooldowns then
+					unlitHouses[house] = tick() + HOUSE_COOLDOWN
 				end
-
-				unlitHouses[house] = tick() + HOUSE_COOLDOWN
 				print(string.format("[TrickOrTreat] #%d ('%s') knocked.", houseData.order, house.Name))
 			end
 
@@ -686,8 +686,9 @@ local function runGraveDigSweep(singleRun)
 						hrp.AssemblyLinearVelocity = Vector3.zero
 						hrp.AssemblyAngularVelocity = Vector3.zero
 
-						task.wait(0.08)
+						task.wait(0.15)
 						interactWithPrompt(prompt)
+						task.wait(0.3)
 						task.wait(digDelay)
 					end
 				end
@@ -1199,6 +1200,15 @@ halloweenTab:CreateToggle({
 	end
 })
 
+halloweenTab:CreateToggle({
+	Name = "Skip Houses on 4-Min Cooldown",
+	Description = "Off = attempts every house without timer restrictions",
+	Default = false,
+	Callback = function(val)
+		checkCooldowns = val
+	end
+})
+
 halloweenTab:CreateButton({
 	Name = "Reset House Cooldowns",
 	Description = "Wipes 4-minute cooldown timer so you can knock again",
@@ -1213,11 +1223,11 @@ halloweenTab:CreateButton({
 })
 
 halloweenTab:CreateSlider({
-	Name = "House Delay [Rec: 0.5s]",
-	Description = "Delay between houses (0.1s for fast PCs, 0.5s recommended)",
-	Min = 0.1,
-	Max = 5,
-	Default = 0.5,
+	Name = "House Post-Knock Delay",
+	Description = "Delay before leaving for the next house",
+	Min = 0.05,
+	Max = 3,
+	Default = 0.1,
 	Increment = 0.05,
 	Callback = function(val)
 		totDelay = val
