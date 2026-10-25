@@ -15,6 +15,11 @@ local UserInputService       = game:GetService("UserInputService")
 local VirtualUser            = game:GetService("VirtualUser")
 local ReplicatedStorage      = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
+local GuiService             = game:GetService("GuiService")
+
+pcall(function()
+	GuiService:SetGameplayPausedNotificationEnabled(false)
+end)
 
 local localPlayer = Players.LocalPlayer
 local camera      = Workspace.CurrentCamera
@@ -27,6 +32,8 @@ local parentGui = (typeof(gethui) == "function" and gethui())
 --   STATE CONFIGURATION
 -- =======================================================================
 local tweenSpeed        = 100
+local fastTweenSpeed    = 350
+local useTweenForTPs    = false
 local OFFSET            = Vector3.new(0, 3, 4)
 local activeTween       = nil
 local tracerEnabled     = false
@@ -57,10 +64,21 @@ waterRayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 local ragdollEnabled      = false
 
+-- Keybind State
+local keybinds = {
+	Fly = Enum.KeyCode.None,
+	Noclip = Enum.KeyCode.None,
+	ESP = Enum.KeyCode.None,
+	InfiniteJump = Enum.KeyCode.None,
+	Ragdoll = Enum.KeyCode.None
+}
+local bindingAction = nil
+local keybindLabels = {}
+
 -- Halloween / Trick or Treat State
 local autoTotEnabled      = false
 local totLoopRunning      = false
-local totDelay            = 1.5
+local totDelay            = 0.5
 local checkLitOnly        = false
 local unlitHouses         = {}
 local currentKnockingHouse = nil
@@ -70,7 +88,7 @@ local HOUSE_COOLDOWN      = 240
 -- Halloween / Auto Dig Grave State
 local autoDigEnabled      = false
 local digLoopRunning      = false
-local digDelay            = 1.5
+local digDelay            = 0.5
 
 -- Garages Auto-Start State
 local autoStartGarages = {
@@ -81,13 +99,16 @@ local autoStartGarages = {
 }
 
 -- =======================================================================
---   EXACT 45-HOUSE ORDER SEQUENCE
+--   CUSTOM TP SEQUENCE (Instant TPs with Tween on House 13)
 -- =======================================================================
 local houseOrder = {
-	18, 13, 20, 21, 24, "Trick or Treat House", 30, 49, 8, 17,
-	7, 26, 11, 35, 27, 4, 37, 19, 3, 15, 40, 39, 38, 41, 48,
-	33, 47, 25, 28, 23, 22, 34, 12, 31, 42, 50, 32, 36, 45,
-	2, 9, 46, 16, 14, "Halloween Hut"
+	39, 42, 15, 12, 23, 34, 29, 26, 50, 47,
+	35, 18, 37, 33, 49, 19, 21, 27, 28, 36,
+	7, 6,
+	{ target = 13, tween = true }, -- Tween across streaming boundary
+	"Trick or Treat House", 8, 16, 43, 17, 10, 38, 4,
+	"Halloween Hut", 22, 2, 25, 20, 14, 11, 40, 24,
+	31, 41, 30, 44, 32, 48, 39
 }
 
 -- =======================================================================
@@ -133,21 +154,6 @@ local function applyCharacterSettings(char)
 	end
 end
 
-local function interactWithPrompt(prompt)
-	if not prompt or not prompt.Parent then return end
-
-	if typeof(fireproximityprompt) == "function" then
-		pcall(function() fireproximityprompt(prompt, 1, true) end)
-		pcall(function() fireproximityprompt(prompt) end)
-	else
-		pcall(function()
-			prompt:InputHoldBegin()
-			task.wait((prompt.HoldDuration or 0.5) + 0.1)
-			prompt:InputHoldEnd()
-		end)
-	end
-end
-
 local function cancelCurrentTween()
 	if activeTween then
 		activeTween:Cancel()
@@ -156,6 +162,90 @@ local function cancelCurrentTween()
 	local hrp = getHRP()
 	if hrp then
 		hrp.Anchored = false
+	end
+end
+
+-- Fast linear travel tween with automatic noclip
+local function fastTweenTo(targetCFrame, customSpeed)
+	local hrp = getHRP()
+	if not hrp or not targetCFrame then return false end
+
+	cancelCurrentTween()
+
+	pcall(function()
+		Workspace:RequestStreamAroundAsync(targetCFrame.Position)
+	end)
+
+	local distance = (hrp.Position - targetCFrame.Position).Magnitude
+	if distance <= 8 then
+		hrp.CFrame = targetCFrame
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		return true
+	end
+
+	local speed = math.max(50, customSpeed or fastTweenSpeed or 350)
+	local duration = math.clamp(distance / speed, 0.05, 3.5)
+
+	local tempNoclip = RunService.Stepped:Connect(function()
+		local char = localPlayer.Character
+		if not char then return end
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end)
+
+	hrp.Anchored = true
+	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+	activeTween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
+
+	local done = false
+	activeTween.Completed:Connect(function()
+		done = true
+	end)
+
+	activeTween:Play()
+
+	while not done and activeTween do
+		task.wait()
+	end
+
+	if tempNoclip then
+		tempNoclip:Disconnect()
+	end
+
+	if hrp and hrp.Parent then
+		hrp.Anchored = false
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+	end
+
+	activeTween = nil
+	return true
+end
+
+local function interactWithPrompt(prompt)
+	if not prompt or not prompt.Parent then return end
+
+	pcall(function()
+		prompt.HoldDuration = 0
+		prompt.RequiresLineOfSight = false
+		if (prompt.MaxActivationDistance or 10) < 25 then
+			prompt.MaxActivationDistance = 25
+		end
+	end)
+
+	if typeof(fireproximityprompt) == "function" then
+		pcall(function() fireproximityprompt(prompt, 1, true) end)
+		pcall(function() fireproximityprompt(prompt) end)
+	else
+		pcall(function()
+			prompt:InputHoldBegin()
+			task.wait((prompt.HoldDuration or 0) + 0.05)
+			prompt:InputHoldEnd()
+		end)
 	end
 end
 
@@ -194,6 +284,10 @@ local function setInstantPrompts(state)
 			if desc:IsA("ProximityPrompt") then
 				if originalHoldDurations[desc] == nil then originalHoldDurations[desc] = desc.HoldDuration end
 				desc.HoldDuration = 0
+				desc.RequiresLineOfSight = false
+				if (desc.MaxActivationDistance or 10) < 25 then
+					desc.MaxActivationDistance = 25
+				end
 			end
 		end
 
@@ -201,26 +295,25 @@ local function setInstantPrompts(state)
 			if not instaRepairEnabled or not prompt then return end
 			if originalHoldDurations[prompt] == nil then originalHoldDurations[prompt] = prompt.HoldDuration end
 			prompt.HoldDuration = 0
+			prompt.RequiresLineOfSight = false
+			if (prompt.MaxActivationDistance or 10) < 25 then
+				prompt.MaxActivationDistance = 25
+			end
 		end))
 
 		table.insert(promptConns, ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
 			if not instaRepairEnabled or not prompt then return end
-			if typeof(fireproximityprompt) == "function" then
-				pcall(function() fireproximityprompt(prompt, 1, true) end)
-				pcall(function() fireproximityprompt(prompt) end)
-			else
-				pcall(function()
-					prompt:InputHoldBegin()
-					task.wait(0.02)
-					prompt:InputHoldEnd()
-				end)
-			end
+			interactWithPrompt(prompt)
 		end))
 
 		table.insert(promptConns, Workspace.DescendantAdded:Connect(function(desc)
 			if desc:IsA("ProximityPrompt") then
 				if originalHoldDurations[desc] == nil then originalHoldDurations[desc] = desc.HoldDuration end
 				desc.HoldDuration = 0
+				desc.RequiresLineOfSight = false
+				if (desc.MaxActivationDistance or 10) < 25 then
+					desc.MaxActivationDistance = 25
+				end
 			end
 		end))
 	else
@@ -260,19 +353,19 @@ task.spawn(function()
 					local hrp = getHRP()
 					if hrp and (hrp.Position - pPart.Position).Magnitude > (prompt.MaxActivationDistance or 10) then
 						hrp.CFrame = pPart.CFrame + Vector3.new(0, 3, 0)
-						task.wait(0.2)
+						task.wait(0.1)
 					end
 					interactWithPrompt(prompt)
-					task.wait(0.5)
+					task.wait(0.2)
 				end
 			end
 		end
-		task.wait(1)
+		task.wait(0.5)
 	end
 end)
 
 -- =======================================================================
---   HALLOWEEN / TRICK OR TREAT (ALWAYS TELEPORTS & STREAMING SAFE)
+--   HALLOWEEN / TRICK OR TREAT
 -- =======================================================================
 task.spawn(function()
 	local eventsFolder = ReplicatedStorage:WaitForChild("Events", 10)
@@ -327,7 +420,6 @@ local function isHousePhysicallyLit(house)
 	return true
 end
 
--- Queues all 45 houses even if parts/prompts are streamed out at distance
 local function getOrderedHouses()
 	local buildingFolder = getHalloweenBuildingFolder()
 	if not buildingFolder then return {} end
@@ -335,7 +427,15 @@ local function getOrderedHouses()
 	local children = buildingFolder:GetChildren()
 	local houseList = {}
 
-	for orderIdx, targetRef in ipairs(houseOrder) do
+	for orderIdx, entry in ipairs(houseOrder) do
+		local targetRef = entry
+		local shouldTween = false
+
+		if typeof(entry) == "table" then
+			targetRef = entry.target
+			shouldTween = entry.tween or false
+		end
+
 		local house = nil
 		if typeof(targetRef) == "number" then
 			house = children[targetRef]
@@ -346,7 +446,8 @@ local function getOrderedHouses()
 		if house and house:IsA("Instance") then
 			table.insert(houseList, {
 				order = orderIdx,
-				house = house
+				house = house,
+				shouldTween = shouldTween
 			})
 		end
 	end
@@ -376,12 +477,10 @@ local function runTrickOrTreatSweep(singleRun)
 			local hrp = getHRP()
 			if not hrp then break end
 
-			-- Cooldown check
 			if unlitHouses[house] and tick() < unlitHouses[house] then
 				continue
 			end
 
-			-- Lit check (only if enabled)
 			if checkLitOnly and not isHousePhysicallyLit(house) then
 				continue
 			end
@@ -389,31 +488,40 @@ local function runTrickOrTreatSweep(singleRun)
 			currentKnockingHouse = house
 			cancelCurrentTween()
 
-			-- Check if prompt & point are already streamed in
+			local shouldTween = houseData.shouldTween
 			local prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
 				or house:FindFirstChildOfClass("ProximityPrompt", true)
 			local promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
 				or (prompt and prompt.Parent)
 
-			-- STAGE 1: If prompt or point is missing at a distance, teleport to the house model first
+			-- STAGE 1: Travel to house if prompt is unstreamed
 			if not promptPoint or not prompt then
 				local houseCF = getHouseCFrame(house)
 				if houseCF and houseCF.Position.Y >= minHouseY then
-					hrp.CFrame = houseCF + Vector3.new(0, 3, 0)
-					hrp.AssemblyLinearVelocity = Vector3.zero
-					hrp.AssemblyAngularVelocity = Vector3.zero
+					local targetDest = houseCF + Vector3.new(0, 3, 0)
+					if shouldTween then
+						fastTweenTo(targetDest, fastTweenSpeed)
+					else
+						hrp.CFrame = targetDest
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						hrp.AssemblyAngularVelocity = Vector3.zero
+					end
 
-					-- Wait brief moment for Roblox to stream in the door, prompt point & prompt
-					task.wait(0.25)
-
-					prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
-						or house:FindFirstChildOfClass("ProximityPrompt", true)
-					promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
-						or (prompt and prompt.Parent)
+					-- Dynamic poll loop: continues as soon as prompt streams in
+					local elapsed = 0
+					while elapsed < 0.35 do
+						prompt = house:FindFirstChild("TrickOrTreatPrompt", true) 
+							or house:FindFirstChildOfClass("ProximityPrompt", true)
+						promptPoint = house:FindFirstChild("TrickOrTreatPromptPoint", true) 
+							or (prompt and prompt.Parent)
+						if prompt and promptPoint then break end
+						task.wait(0.05)
+						elapsed = elapsed + 0.05
+					end
 				end
 			end
 
-			-- STAGE 2: Now snap directly in front of the door (what it wanted you to tp to at first)
+			-- STAGE 2: Snap directly to prompt point
 			if promptPoint then
 				local targetCFrame = nil
 				if promptPoint:IsA("Attachment") then
@@ -425,21 +533,23 @@ local function runTrickOrTreatSweep(singleRun)
 				end
 
 				if targetCFrame and targetCFrame.Position.Y >= minHouseY then
-					hrp.CFrame = targetCFrame + Vector3.new(0, 1.5, 0)
-					hrp.AssemblyLinearVelocity = Vector3.zero
-					hrp.AssemblyAngularVelocity = Vector3.zero
-					task.wait(0.2)
+					local targetDest = targetCFrame + Vector3.new(0, 1.5, 0)
+					if shouldTween then
+						fastTweenTo(targetDest, fastTweenSpeed)
+					else
+						hrp.CFrame = targetDest
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						hrp.AssemblyAngularVelocity = Vector3.zero
+					end
+					task.wait(0.08)
 				end
 			end
 
-			-- STAGE 3: Trigger the prompt
+			-- STAGE 3: Trigger prompt
+			prompt = prompt or house:FindFirstChild("TrickOrTreatPrompt", true) or house:FindFirstChildOfClass("ProximityPrompt", true)
 			if prompt then
-				pcall(function()
-					prompt.MaxActivationDistance = 25
-				end)
-
 				interactWithPrompt(prompt)
-				task.wait(0.35)
+				task.wait(0.2)
 
 				if unlitHouses[house] and tick() < unlitHouses[house] then
 					currentKnockingHouse = nil
@@ -447,10 +557,10 @@ local function runTrickOrTreatSweep(singleRun)
 				end
 
 				unlitHouses[house] = tick() + HOUSE_COOLDOWN
-				print(string.format("[TrickOrTreat] #%d ('%s') knocked. Cooldown set.", houseData.order, house.Name))
+				print(string.format("[TrickOrTreat] #%d ('%s') knocked.", houseData.order, house.Name))
 			end
 
-			task.wait(math.max(0, totDelay - 0.55))
+			task.wait(totDelay)
 			currentKnockingHouse = nil
 		end
 	end)
@@ -571,11 +681,12 @@ local function runGraveDigSweep(singleRun)
 					end
 
 					if targetCFrame then
-						hrp.CFrame = targetCFrame + Vector3.new(0, 2.5, 0)
+						local targetDest = targetCFrame + Vector3.new(0, 2.5, 0)
+						hrp.CFrame = targetDest
 						hrp.AssemblyLinearVelocity = Vector3.zero
 						hrp.AssemblyAngularVelocity = Vector3.zero
 
-						task.wait(0.3)
+						task.wait(0.08)
 						interactWithPrompt(prompt)
 						task.wait(digDelay)
 					end
@@ -590,85 +701,6 @@ local function runGraveDigSweep(singleRun)
 
 	digLoopRunning = false
 end
-
--- Respawn hooks
-localPlayer.CharacterAdded:Connect(function(char)
-	applyCharacterSettings(char)
-
-	task.wait(0.2)
-	if noclipEnabled then setNoclip(true) end
-	if flyEnabled then setFly(true) end
-	if walkOnWaterEnabled then setWalkOnWater(true) end
-	if ragdollEnabled then setRagdoll(true) end
-end)
-
--- =======================================================================
---   RUNSERVICE RENDER LOOPS
--- =======================================================================
-RunService.RenderStepped:Connect(function()
-	if tracerEnabled then
-		if not tracerBeam then
-			tracerBeam = Instance.new("Beam")
-			tracerBeam.Name = "TracerBeam"
-			tracerBeam.Color = ColorSequence.new(Color3.fromRGB(255, 45, 45))
-			tracerBeam.Width0 = 0.1
-			tracerBeam.Width1 = 0.1
-			tracerBeam.FaceCamera = true
-			tracerBeam.LightEmission = 1
-			tracerBeam.Parent = camera
-		end
-
-		local myHRP = getHRP()
-		local nearest = getNearestZombie()
-
-		if myHRP and nearest then
-			local targetHRP = nearest:FindFirstChild("HumanoidRootPart") or nearest:FindFirstChild("Torso")
-			if targetHRP then
-				if not playerAttachment or playerAttachment.Parent ~= myHRP then
-					playerAttachment = Instance.new("Attachment", myHRP)
-				end
-				local targetAtt = targetHRP:FindFirstChild("TargetAtt") or Instance.new("Attachment", targetHRP)
-				targetAtt.Name = "TargetAtt"
-
-				tracerBeam.Attachment0 = playerAttachment
-				tracerBeam.Attachment1 = targetAtt
-				tracerBeam.Enabled = true
-			else
-				if tracerBeam then tracerBeam.Enabled = false end
-			end
-		else
-			if tracerBeam then tracerBeam.Enabled = false end
-		end
-	elseif tracerBeam then
-		tracerBeam.Enabled = false
-	end
-
-	if espEnabled then
-		for _, z in ipairs(getZombies()) do
-			if not z:FindFirstChild("DevZombieHighlight") then
-				local hl = Instance.new("Highlight")
-				hl.Name = "DevZombieHighlight"
-				hl.FillColor = Color3.fromRGB(255, 45, 45)
-				hl.FillTransparency = 0.5
-				hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-				hl.OutlineTransparency = 0.2
-				hl.Adornee = z
-				hl.Parent = z
-			end
-		end
-	end
-end)
-
-UserInputService.JumpRequest:Connect(function()
-	if infJumpEnabled then
-		local hum = getHumanoid()
-		if hum and hum.Parent then
-			hum:ChangeState(Enum.HumanoidStateType.Jumping)
-			hum:ChangeState(Enum.HumanoidStateType.Seated)
-			hum:ChangeState(Enum.HumanoidStateType.Jumping)
-		end
-	end
-end)
 
 -- =======================================================================
 --   MOVEMENT / PHYSICS
@@ -726,28 +758,6 @@ local function setFly(state)
 		if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
 	end
 end
-
-UserInputService.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	local k = input.KeyCode
-	if k == Enum.KeyCode.W           then flyKeys.W = true end
-	if k == Enum.KeyCode.A           then flyKeys.A = true end
-	if k == Enum.KeyCode.S           then flyKeys.S = true end
-	if k == Enum.KeyCode.D           then flyKeys.D = true end
-	if k == Enum.KeyCode.Space       then flyKeys.Up = true end
-	if k == Enum.KeyCode.LeftControl then flyKeys.Down = true end
-end)
-
-UserInputService.InputEnded:Connect(function(input, gpe)
-	if gpe then return end
-	local k = input.KeyCode
-	if k == Enum.KeyCode.W           then flyKeys.W = false end
-	if k == Enum.KeyCode.A           then flyKeys.A = false end
-	if k == Enum.KeyCode.S           then flyKeys.S = false end
-	if k == Enum.KeyCode.D           then flyKeys.D = false end
-	if k == Enum.KeyCode.Space       then flyKeys.Up = false end
-	if k == Enum.KeyCode.LeftControl then flyKeys.Down = false end
-end)
 
 local function setWalkOnWater(state)
 	walkOnWaterEnabled = state
@@ -866,6 +876,197 @@ local function clearESP()
 end
 
 -- =======================================================================
+--   RESPAWN HOOKS
+-- =======================================================================
+localPlayer.CharacterAdded:Connect(function(char)
+	applyCharacterSettings(char)
+
+	task.wait(0.2)
+	if noclipEnabled then setNoclip(true) end
+	if flyEnabled then setFly(true) end
+	if walkOnWaterEnabled then setWalkOnWater(true) end
+	if ragdollEnabled then setRagdoll(true) end
+end)
+
+-- =======================================================================
+--   RUNSERVICE RENDER LOOPS
+-- =======================================================================
+RunService.RenderStepped:Connect(function()
+	if tracerEnabled then
+		if not tracerBeam then
+			tracerBeam = Instance.new("Beam")
+			tracerBeam.Name = "TracerBeam"
+			tracerBeam.Color = ColorSequence.new(Color3.fromRGB(255, 45, 45))
+			tracerBeam.Width0 = 0.1
+			tracerBeam.Width1 = 0.1
+			tracerBeam.FaceCamera = true
+			tracerBeam.LightEmission = 1
+			tracerBeam.Parent = camera
+		end
+
+		local myHRP = getHRP()
+		local nearest = getNearestZombie()
+
+		if myHRP and nearest then
+			local targetHRP = nearest:FindFirstChild("HumanoidRootPart") or nearest:FindFirstChild("Torso")
+			if targetHRP then
+				if not playerAttachment or playerAttachment.Parent ~= myHRP then
+					playerAttachment = Instance.new("Attachment", myHRP)
+				end
+				local targetAtt = targetHRP:FindFirstChild("TargetAtt") or Instance.new("Attachment", targetHRP)
+				targetAtt.Name = "TargetAtt"
+
+				tracerBeam.Attachment0 = playerAttachment
+				tracerBeam.Attachment1 = targetAtt
+				tracerBeam.Enabled = true
+			else
+				if tracerBeam then tracerBeam.Enabled = false end
+			end
+		else
+			if tracerBeam then tracerBeam.Enabled = false end
+		end
+	elseif tracerBeam then
+		tracerBeam.Enabled = false
+	end
+
+	if espEnabled then
+		for _, z in ipairs(getZombies()) do
+			if not z:FindFirstChild("DevZombieHighlight") then
+				local hl = Instance.new("Highlight")
+				hl.Name = "DevZombieHighlight"
+				hl.FillColor = Color3.fromRGB(255, 45, 45)
+				hl.FillTransparency = 0.5
+				hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+				hl.OutlineTransparency = 0.2
+				hl.Adornee = z
+				hl.Parent = z
+			end
+		end
+	end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+	if infJumpEnabled then
+		local hum = getHumanoid()
+		if hum and hum.Parent then
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+			hum:ChangeState(Enum.HumanoidStateType.Seated)
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
+	end
+end)
+
+-- =======================================================================
+--   KEYBIND UI HELPER LOGIC
+-- =======================================================================
+local function findKeybindLabel(actionName)
+	if keybindLabels[actionName] and keybindLabels[actionName].Parent then
+		return keybindLabels[actionName]
+	end
+
+	local main = parentGui:FindFirstChild("HallowLib_Main")
+	if not main then return nil end
+
+	local searchContainer = main:FindFirstChild("Keybinds_Page", true) or main
+
+	for _, desc in ipairs(searchContainer:GetDescendants()) do
+		if desc:IsA("TextLabel") and string.find(desc.Text, "Bind " .. actionName) then
+			keybindLabels[actionName] = desc
+			return desc
+		end
+	end
+
+	local page = main:FindFirstChild("Keybinds_Page", true)
+	if page then
+		for _, desc in ipairs(page:GetDescendants()) do
+			if desc:IsA("TextLabel") and string.find(desc.Text, actionName) then
+				keybindLabels[actionName] = desc
+				return desc
+			end
+		end
+	end
+
+	return nil
+end
+
+local function updateKeybindDisplay(actionName, newText)
+	local lbl = findKeybindLabel(actionName)
+	if lbl then
+		lbl.Text = newText
+	end
+end
+
+-- =======================================================================
+--   INPUT & KEYBIND DISPATCHER
+-- =======================================================================
+UserInputService.InputBegan:Connect(function(input, gpe)
+	local k = input.KeyCode
+
+	if bindingAction then
+		if k == Enum.KeyCode.Unknown then return end
+		local action = bindingAction
+		bindingAction = nil
+
+		if k == Enum.KeyCode.Escape then
+			keybinds[action] = Enum.KeyCode.None
+			updateKeybindDisplay(action, "Bind " .. action .. " [None]")
+			window:Notify({
+				title = "Keybinds",
+				content = action .. " binding cleared.",
+				duration = 2
+			})
+		else
+			keybinds[action] = k
+			local keyName = k.Name
+			updateKeybindDisplay(action, "Bind " .. action .. " [" .. keyName .. "]")
+			window:Notify({
+				title = "Keybinds",
+				content = action .. " bound to [" .. keyName .. "]",
+				duration = 2
+			})
+		end
+		return
+	end
+
+	if gpe then return end
+
+	if k == keybinds.Fly and k ~= Enum.KeyCode.None then
+		setFly(not flyEnabled)
+	end
+	if k == keybinds.Noclip and k ~= Enum.KeyCode.None then
+		setNoclip(not noclipEnabled)
+	end
+	if k == keybinds.ESP and k ~= Enum.KeyCode.None then
+		espEnabled = not espEnabled
+		if not espEnabled then clearESP() end
+	end
+	if k == keybinds.InfiniteJump and k ~= Enum.KeyCode.None then
+		infJumpEnabled = not infJumpEnabled
+	end
+	if k == keybinds.Ragdoll and k ~= Enum.KeyCode.None then
+		setRagdoll(not ragdollEnabled)
+	end
+
+	if k == Enum.KeyCode.W           then flyKeys.W = true end
+	if k == Enum.KeyCode.A           then flyKeys.A = true end
+	if k == Enum.KeyCode.S           then flyKeys.S = true end
+	if k == Enum.KeyCode.D           then flyKeys.D = true end
+	if k == Enum.KeyCode.Space       then flyKeys.Up = true end
+	if k == Enum.KeyCode.LeftControl then flyKeys.Down = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gpe)
+	if gpe then return end
+	local k = input.KeyCode
+	if k == Enum.KeyCode.W           then flyKeys.W = false end
+	if k == Enum.KeyCode.A           then flyKeys.A = false end
+	if k == Enum.KeyCode.S           then flyKeys.S = false end
+	if k == Enum.KeyCode.D           then flyKeys.D = false end
+	if k == Enum.KeyCode.Space       then flyKeys.Up = false end
+	if k == Enum.KeyCode.LeftControl then flyKeys.Down = false end
+end)
+
+-- =======================================================================
 --   TPS LOGIC
 -- =======================================================================
 local CustomTargets = {
@@ -930,67 +1131,23 @@ local function teleportToTarget(targetCFrame, name, yOffset)
 	local hrp = getHRP()
 	if not hrp or not targetCFrame then return end
 
-	cancelCurrentTween()
-
 	local offset = yOffset or 4.5
 	local destCFrame = CFrame.new(targetCFrame.Position + Vector3.new(0, offset, 0))
 
-	hrp.CFrame = destCFrame
-	hrp.AssemblyLinearVelocity = Vector3.zero
-	hrp.AssemblyAngularVelocity = Vector3.zero
+	if useTweenForTPs then
+		fastTweenTo(destCFrame, fastTweenSpeed)
+	else
+		cancelCurrentTween()
+		hrp.CFrame = destCFrame
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+	end
 
 	if name then
 		window:Notify({
 			title = "Teleport",
-			content = "Teleported to " .. name,
+			content = "Traveled to " .. name,
 			duration = 2
-		})
-	end
-end
-
-local function buildTPs()
-	local areasFolder = Workspace:FindFirstChild("Areas")
-	if not areasFolder then return end
-
-	for _, areaFolder in ipairs(areasFolder:GetChildren()) do
-		tpsTab:CreateButton({
-			Name = "TP " .. areaFolder.Name,
-			Callback = function()
-				if areaFolder.Name == "Shopping Mall" then
-					task.spawn(function()
-						local junkYard = areasFolder:FindFirstChild("Junk Yard") or areasFolder:FindFirstChild("Junkyard")
-						if junkYard then
-							local jyTarget = resolveAreaTarget(junkYard)
-							if jyTarget then
-								teleportToTarget(jyTarget, "Junk Yard (Transit)", 4.5)
-								task.wait(0.4)
-							end
-						end
-
-						local mallTarget = resolveAreaTarget(areaFolder)
-						if mallTarget then
-							teleportToTarget(mallTarget, "Shopping Mall", 4.5)
-						else
-							window:Notify({
-								title = "Teleport Failed",
-								content = "Could not find destination for Shopping Mall",
-								duration = 3
-							})
-						end
-					end)
-				else
-					local targetCFrame = resolveAreaTarget(areaFolder)
-					if targetCFrame then
-						teleportToTarget(targetCFrame, areaFolder.Name, 4.5)
-					else
-						window:Notify({
-							title = "Teleport Failed",
-							content = "Could not find destination for " .. areaFolder.Name,
-							duration = 3
-						})
-					end
-				end
-			end
 		})
 	end
 end
@@ -1004,11 +1161,11 @@ end
 -- -----------------------------------------------------------------------
 local halloweenTab = window:CreateTab("Halloween", "🎃")
 
-halloweenTab:CreateSection("Trick or Treat (Ordered Sequence)")
+halloweenTab:CreateSection("Trick or Treat (Custom 47-Stop Sequence)")
 
 halloweenTab:CreateToggle({
 	Name = "Auto Trick or Treat (Loop)",
-	Description = "Loops through all 45 houses in the exact sequence",
+	Description = "Loops through the sequence with fast TPs (tweens to #13)",
 	Default = false,
 	Callback = function(value)
 		autoTotEnabled = value
@@ -1016,7 +1173,7 @@ halloweenTab:CreateToggle({
 			task.spawn(function()
 				while autoTotEnabled do
 					runTrickOrTreatSweep(false)
-					task.wait(1)
+					task.wait(totDelay)
 				end
 			end)
 		end
@@ -1025,7 +1182,7 @@ halloweenTab:CreateToggle({
 
 halloweenTab:CreateButton({
 	Name = "Trick or Treat All Houses (Once)",
-	Description = "Runs the 45-house sweep one time",
+	Description = "Runs the sequence one time",
 	Callback = function()
 		task.spawn(function()
 			runTrickOrTreatSweep(true)
@@ -1056,11 +1213,12 @@ halloweenTab:CreateButton({
 })
 
 halloweenTab:CreateSlider({
-	Name = "House Delay",
-	Min = 0.5,
+	Name = "House Delay [Rec: 0.5s]",
+	Description = "Delay between houses (0.1s for fast PCs, 0.5s recommended)",
+	Min = 0.1,
 	Max = 5,
-	Default = 1.5,
-	Increment = 0.1,
+	Default = 0.5,
+	Increment = 0.05,
 	Callback = function(val)
 		totDelay = val
 	end
@@ -1078,7 +1236,7 @@ halloweenTab:CreateToggle({
 			task.spawn(function()
 				while autoDigEnabled do
 					runGraveDigSweep(false)
-					task.wait(1)
+					task.wait(digDelay)
 				end
 			end)
 		end
@@ -1096,20 +1254,32 @@ halloweenTab:CreateButton({
 })
 
 halloweenTab:CreateSlider({
-	Name = "Grave Delay",
-	Min = 0.5,
+	Name = "Grave Delay [Rec: 0.5s]",
+	Description = "Delay between digging graves (0.1s for fast PCs, 0.5s recommended)",
+	Min = 0.1,
 	Max = 5,
-	Default = 1.5,
-	Increment = 0.1,
+	Default = 0.5,
+	Increment = 0.05,
 	Callback = function(val)
 		digDelay = val
 	end
 })
 
 -- -----------------------------------------------------------------------
---   TAB: GARAGES
+--   TAB: GARAGES (With Insta Repair)
 -- -----------------------------------------------------------------------
 local garagesTab = window:CreateTab("Garages", "🏚️")
+
+garagesTab:CreateSection("Instant Interaction")
+
+garagesTab:CreateToggle({
+	Name = "Insta Repair / Instant Hold",
+	Description = "Makes all proximity prompts complete instantly",
+	Default = false,
+	Callback = function(value)
+		setInstantPrompts(value)
+	end
+})
 
 garagesTab:CreateSection("Halloween Auction Garages")
 
@@ -1185,20 +1355,9 @@ zombiesTab:CreateToggle({
 })
 
 -- -----------------------------------------------------------------------
---   TAB: PLAYER
+--   TAB: PLAYER (Merged with Movement & Fun / FX)
 -- -----------------------------------------------------------------------
 local playerTab = window:CreateTab("Player", "👤")
-
-playerTab:CreateSection("Interaction")
-
-playerTab:CreateToggle({
-	Name = "Insta Repair / Instant Hold",
-	Description = "Makes all proximity prompts complete instantly",
-	Default = false,
-	Callback = function(value)
-		setInstantPrompts(value)
-	end
-})
 
 playerTab:CreateSection("Character Attributes")
 
@@ -1254,7 +1413,45 @@ playerTab:CreateSlider({
 	end
 })
 
-playerTab:CreateSection("Utility & Visuals")
+playerTab:CreateSection("Movement & Travel")
+
+playerTab:CreateToggle({
+	Name = "Fly Mode",
+	Description = "Controls: WASD + Space (Up) + LeftCtrl (Down)",
+	Default = false,
+	Callback = function(value)
+		setFly(value)
+	end
+})
+
+playerTab:CreateSlider({
+	Name = "Fly Speed",
+	Min = 10,
+	Max = 200,
+	Default = 60,
+	Increment = 5,
+	Callback = function(val)
+		flySpeed = val
+	end
+})
+
+playerTab:CreateToggle({
+	Name = "Noclip",
+	Description = "Walk through walls and obstacles",
+	Default = false,
+	Callback = function(value)
+		setNoclip(value)
+	end
+})
+
+playerTab:CreateToggle({
+	Name = "Walk On Water",
+	Description = "Surfaces character above water lakes",
+	Default = false,
+	Callback = function(value)
+		setWalkOnWater(value)
+	end
+})
 
 playerTab:CreateToggle({
 	Name = "Infinite Jump",
@@ -1262,6 +1459,26 @@ playerTab:CreateToggle({
 	Default = false,
 	Callback = function(value)
 		infJumpEnabled = value
+	end
+})
+
+playerTab:CreateSection("Utility & Visuals")
+
+playerTab:CreateToggle({
+	Name = "Fullbright / Clear Fog",
+	Description = "Disables shadows and clears dark atmosphere",
+	Default = false,
+	Callback = function(value)
+		fullbrightEnabled = value
+		if fullbrightEnabled then
+			Lighting.Brightness = 2
+			Lighting.ClockTime = 14
+			Lighting.FogEnd = 100000
+			Lighting.GlobalShadows = false
+		else
+			Lighting.Brightness = 1
+			Lighting.GlobalShadows = true
+		end
 	end
 })
 
@@ -1284,21 +1501,21 @@ playerTab:CreateToggle({
 	end
 })
 
+playerTab:CreateSection("Fun & Actions")
+
 playerTab:CreateToggle({
-	Name = "Fullbright / Clear Fog",
-	Description = "Disables shadows and clears dark atmosphere",
+	Name = "Ragdoll Mode",
 	Default = false,
 	Callback = function(value)
-		fullbrightEnabled = value
-		if fullbrightEnabled then
-			Lighting.Brightness = 2
-			Lighting.ClockTime = 14
-			Lighting.FogEnd = 100000
-			Lighting.GlobalShadows = false
-		else
-			Lighting.Brightness = 1
-			Lighting.GlobalShadows = true
-		end
+		setRagdoll(value)
+	end
+})
+
+playerTab:CreateButton({
+	Name = "Explode Me",
+	Description = "Visual explosion in place",
+	Callback = function()
+		explodeMe()
 	end
 })
 
@@ -1312,81 +1529,107 @@ playerTab:CreateButton({
 })
 
 -- -----------------------------------------------------------------------
---   TAB: MOVEMENT
+--   TAB: KEYBINDS
 -- -----------------------------------------------------------------------
-local movementTab = window:CreateTab("Movement", "⚡")
+local keybindsTab = window:CreateTab("Keybinds", "⌨️")
+keybindsTab:CreateSection("Bind Actions (Click to Bind/Unbind)")
 
-movementTab:CreateSection("Flight")
+local function createBindButton(actionName)
+	keybindsTab:CreateButton({
+		Name = "Bind " .. actionName .. " [None]",
+		Callback = function()
+			if bindingAction == actionName then
+				bindingAction = nil
+				local cur = keybinds[actionName]
+				local curName = (cur and cur ~= Enum.KeyCode.None) and cur.Name or "None"
+				updateKeybindDisplay(actionName, "Bind " .. actionName .. " [" .. curName .. "]")
+			elseif keybinds[actionName] ~= Enum.KeyCode.None then
+				keybinds[actionName] = Enum.KeyCode.None
+				updateKeybindDisplay(actionName, "Bind " .. actionName .. " [None]")
+				window:Notify({
+					title = "Keybinds",
+					content = actionName .. " unbound.",
+					duration = 2
+				})
+			else
+				bindingAction = actionName
+				updateKeybindDisplay(actionName, "Press key to bind " .. actionName .. "...")
+				window:Notify({
+					title = "Keybinds",
+					content = "Press any key to bind " .. actionName .. " (Esc to clear)",
+					duration = 2.5
+				})
+			end
+		end
+	})
+end
 
-movementTab:CreateToggle({
-	Name = "Fly Mode",
-	Description = "Controls: WASD + Space (Up) + LeftCtrl (Down)",
-	Default = false,
-	Callback = function(value)
-		setFly(value)
+createBindButton("Fly")
+createBindButton("Noclip")
+createBindButton("ESP")
+createBindButton("InfiniteJump")
+createBindButton("Ragdoll")
+
+task.defer(function()
+	task.wait(0.2)
+	for action in pairs(keybinds) do
+		findKeybindLabel(action)
 	end
-})
-
-movementTab:CreateSlider({
-	Name = "Fly Speed",
-	Min = 10,
-	Max = 200,
-	Default = 60,
-	Increment = 5,
-	Callback = function(val)
-		flySpeed = val
-	end
-})
-
-movementTab:CreateSection("Physics Bypass")
-
-movementTab:CreateToggle({
-	Name = "Noclip",
-	Description = "Walk through walls and obstacles",
-	Default = false,
-	Callback = function(value)
-		setNoclip(value)
-	end
-})
-
-movementTab:CreateToggle({
-	Name = "Walk On Water",
-	Description = "Surfaces character above water lakes",
-	Default = false,
-	Callback = function(value)
-		setWalkOnWater(value)
-	end
-})
-
--- -----------------------------------------------------------------------
---   TAB: FUN & FX
--- -----------------------------------------------------------------------
-local funTab = window:CreateTab("Fun / FX", "✨")
-
-funTab:CreateSection("Actions")
-
-funTab:CreateToggle({
-	Name = "Ragdoll Mode",
-	Default = false,
-	Callback = function(value)
-		setRagdoll(value)
-	end
-})
-
-funTab:CreateButton({
-	Name = "Explode Me",
-	Description = "Visual explosion in place",
-	Callback = function()
-		explodeMe()
-	end
-})
+end)
 
 -- -----------------------------------------------------------------------
 --   TAB: TPS
 -- -----------------------------------------------------------------------
-tpsTab = window:CreateTab("TPs", "📍")
+local tpsTab = window:CreateTab("TPs", "📍")
 
 tpsTab:CreateSection("Area Locations")
+
+local function buildTPs()
+	local areasFolder = Workspace:FindFirstChild("Areas")
+	if not areasFolder then return end
+
+	for _, areaFolder in ipairs(areasFolder:GetChildren()) do
+		tpsTab:CreateButton({
+			Name = "TP " .. areaFolder.Name,
+			Callback = function()
+				if areaFolder.Name == "Shopping Mall" then
+					task.spawn(function()
+						local junkYard = areasFolder:FindFirstChild("Junk Yard") or areasFolder:FindFirstChild("Junkyard")
+						if junkYard then
+							local jyTarget = resolveAreaTarget(junkYard)
+							if jyTarget then
+								teleportToTarget(jyTarget, "Junk Yard (Transit)", 4.5)
+								task.wait(0.4)
+							end
+						end
+
+						local mallTarget = resolveAreaTarget(areaFolder)
+						if mallTarget then
+							teleportToTarget(mallTarget, "Shopping Mall", 4.5)
+						else
+							window:Notify({
+								title = "Teleport Failed",
+								content = "Could not find destination for Shopping Mall",
+								duration = 3
+							})
+						end
+					end)
+				else
+					local targetCFrame = resolveAreaTarget(areaFolder)
+					if targetCFrame then
+						teleportToTarget(targetCFrame, areaFolder.Name, 4.5)
+					else
+						window:Notify({
+							title = "Teleport Failed",
+							content = "Could not find destination for " .. areaFolder.Name,
+							duration = 3
+						})
+					end
+				end
+			end
+		})
+	end
+end
 
 buildTPs()
 
