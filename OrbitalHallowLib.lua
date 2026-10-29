@@ -1,6 +1,6 @@
 -- =======================================================================
 --   🎃 HALLOW-RADIAL UI LIBRARY (STANDALONE MODULE)
---   Theme: Beveled Carved Pumpkin / Staggered Orbital Swirl / Clean Tabs
+--   Theme: Beveled Carved Pumpkin / Synchronized Accelerating Orbital Swirl
 -- =======================================================================
 
 local CoreGui          = game:GetService("CoreGui")
@@ -25,7 +25,7 @@ local Hallow = {
 		Click  = "rbxassetid://6895079853",
 		Hover  = "rbxassetid://6895079853",
 		Toggle = "rbxassetid://6895079853",
-		Notify = "rbxassetid://4590662766",
+		Notify = "rbxassetid://4590662766", -- Crisp chime / ding
 		Open   = "rbxassetid://4590662766",
 	},
 	Theme = {
@@ -37,7 +37,7 @@ local Hallow = {
 		Amber        = Color3.fromRGB(255, 140, 20),
 		AmberGlow    = Color3.fromRGB(255, 195, 50),   -- Candlelight amber glow
 		AmberDark    = Color3.fromRGB(150, 65, 10),
-		RedClose     = Color3.fromRGB(255, 55, 65),    -- Pure bright Red for Close X
+		RedClose     = Color3.fromRGB(255, 55, 65),    -- Bright Red Close X
 		RedCloseGlow = Color3.fromRGB(255, 95, 95),
 		CardBg       = Color3.fromRGB(28, 11, 4),
 		CardHover    = Color3.fromRGB(46, 18, 6),
@@ -201,7 +201,6 @@ function Hallow:CreateWindow(settings)
 
 	initNotifyHolder(ScreenGui)
 
-	-- Root Center Base
 	local BaseCenter = Instance.new("Frame")
 	BaseCenter.Name = "BaseCenter"
 	BaseCenter.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -240,23 +239,23 @@ function Hallow:CreateWindow(settings)
 		tw(MiniStroke, { Color = Hallow.Theme.Amber, Thickness = 3.5 })
 	end)
 
-	-- Central Core (Starts directly at MASSIVE 380px on spawn!)
+	-- Central Core: Starts HUGE at 380px on load!
 	local CoreHolder = Instance.new("Frame")
 	CoreHolder.Name = "CoreHolder"
 	CoreHolder.AnchorPoint = Vector2.new(0.5, 0.5)
-	CoreHolder.Position = UDim2.new(0, 0, 0, 0)
-	CoreHolder.Size = UDim2.new(0, 380, 0, 380) -- Initial massive size!
+	CoreHolder.Position = UDim2.new(0.5, 0, 0.5, 0)
+	CoreHolder.Size = UDim2.new(0, 380, 0, 380) -- Guaranteed massive on frame 0
 	CoreHolder.BackgroundColor3 = Hallow.Theme.CoreBg
 	CoreHolder.BorderSizePixel = 0
 	CoreHolder.ClipsDescendants = false
 	CoreHolder.Visible = true
-	CoreHolder.Parent = BaseCenter
+	CoreHolder.Parent = ScreenGui
 	Instance.new("UICorner", CoreHolder).CornerRadius = UDim.new(1, 0)
 
 	local CoreStroke = Instance.new("UIStroke", CoreHolder)
 	CoreStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	CoreStroke.Color = Hallow.Theme.Amber
-	CoreStroke.Thickness = 4
+	CoreStroke.Thickness = 4.5
 
 	local DecRing = Instance.new("Frame")
 	DecRing.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -398,7 +397,7 @@ function Hallow:CreateWindow(settings)
 			tw(tab.Frame, { Size = UDim2.new(0, 130, 0, 130), BackgroundColor3 = Hallow.Theme.NodeBg }, 0.35, Enum.EasingStyle.Back)
 			tw(tab.Stroke, { Transparency = 1 })
 			tw(tab.InnerPlate, { BackgroundColor3 = Hallow.Theme.InnerRing }, 0.35)
-			tab.Label.TextTransparency = 1 -- Keep uncluttered
+			tab.Label.TextTransparency = 1
 		end
 		WindowHandler.CurrentActive = nil
 	end
@@ -522,19 +521,18 @@ function Hallow:CreateWindow(settings)
 		ClickBtn.AutoButtonColor = false
 		ClickBtn.Parent = NodeFrame
 
-		-- Clean, Centered Icon
 		local NodeIcon = Instance.new("TextLabel")
 		NodeIcon.Text = iconText or "🎃"
 		NodeIcon.Font = Enum.Font.GothamBold
 		NodeIcon.TextSize = isCloseTab and 46 or 42
 		NodeIcon.TextColor3 = isCloseTab and Hallow.Theme.RedClose or Hallow.Theme.TextMuted
 		NodeIcon.AnchorPoint = Vector2.new(0.5, 0.5)
-		NodeIcon.Position = UDim2.new(0.5, 0, 0.5, 0) -- Perfectly centered when idle
+		NodeIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
 		NodeIcon.Size = UDim2.new(0, 56, 0, 56)
 		NodeIcon.BackgroundTransparency = 1
 		NodeIcon.Parent = InnerNodePlate
 
-		-- Hover-Only Title Label (Invisible by default, eliminates text clutter!)
+		-- Title only appears on hover!
 		local NodeLabel = Instance.new("TextLabel")
 		NodeLabel.Text = string.upper(title)
 		NodeLabel.Font = Enum.Font.GothamBold
@@ -544,10 +542,9 @@ function Hallow:CreateWindow(settings)
 		NodeLabel.Position = UDim2.new(0.5, 0, 1, -12)
 		NodeLabel.Size = UDim2.new(1, -10, 0, 18)
 		NodeLabel.BackgroundTransparency = 1
-		NodeLabel.TextTransparency = 1 -- Fully hidden while idle!
+		NodeLabel.TextTransparency = 1 -- Hidden by default
 		NodeLabel.Parent = InnerNodePlate
 
-		-- HOVER: Shift icon up, reveal title smoothly & light up outline!
 		ClickBtn.MouseEnter:Connect(function()
 			playHoverSound(1.65, 0.4)
 			if not WindowHandler.IsExpanded and not WindowHandler.IsMinimized and not WindowHandler.InStartupAnim then
@@ -562,7 +559,7 @@ function Hallow:CreateWindow(settings)
 					Position = UDim2.new(0.5, 0, 0.38, 0),
 					TextColor3 = isCloseTab and Hallow.Theme.RedCloseGlow or Hallow.Theme.AmberGlow
 				}, 0.18)
-				tw(NodeLabel, { TextTransparency = 0 }, 0.18) -- Fades title in cleanly!
+				tw(NodeLabel, { TextTransparency = 0 }, 0.18)
 			end
 		end)
 
@@ -576,7 +573,7 @@ function Hallow:CreateWindow(settings)
 					Position = UDim2.new(0.5, 0, 0.5, 0),
 					TextColor3 = isCloseTab and Hallow.Theme.RedClose or Hallow.Theme.TextMuted
 				}, 0.18)
-				tw(NodeLabel, { TextTransparency = 1 }, 0.18) -- Fades title out!
+				tw(NodeLabel, { TextTransparency = 1 }, 0.18)
 			end
 		end)
 
@@ -601,85 +598,84 @@ function Hallow:CreateWindow(settings)
 	end
 
 	-- ===================================================================
-	--   ✨ CINEMATIC ORBITAL SWIRL (ONE-BY-ONE POP OUT ANIMATION)
+	--   ✨ SYNCHRONIZED SHRINK + ACCELERATED ORBITAL REVOLUTION ANIMATION
 	-- ===================================================================
 	task.defer(function()
-		task.wait(0.08)
+		-- Give script plenty of time to register all tabs
+		task.wait(0.35)
 		WindowHandler.InStartupAnim = true
 
-		-- Stage 1: Core is already at 380px on spawn. Let it breathe and boom!
+		-- Stage 1: Big Orb sitting center stage
 		playSound(Hallow.Sounds.Open, 0.9, 1.0)
-		task.wait(0.5)
+		task.wait(0.4)
 
-		-- Stage 2: Core Compresses and Snaps into 210px
-		playSound(Hallow.Sounds.Click, 0.75, 0.9)
-		tw(CoreHolder, { Size = UDim2.new(0, 210, 0, 210) }, 0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-		task.wait(0.35)
-
-		-- Stage 3: Pop Tabs Out ONE-BY-ONE from the Middle & Swirl Around!
 		local total = #WindowHandler.Tabs
-		if total > 0 then
-			-- Dynamic launch delay based on tab count!
-			local interval = math.clamp(0.85 / total, 0.08, 0.15)
-			local flightDuration = 0.85
-			local swirlRotation = math.pi * 1.5 -- 270 degree orbital revolution
-			local startRadius = 60
-			local endRadius = WindowHandler.Radius
+		local animDuration = 1.3
+		local fullRotations = math.pi * 2.8 -- Multi-circle swirl
+		local startRadius = 70
+		local endRadius = WindowHandler.Radius
 
-			local startTime = tick()
-			local renderConn
-
-			renderConn = RunService.RenderStepped:Connect(function()
-				local now = tick()
-				local elapsed = now - startTime
-				local allFinished = true
-
-				for i, tab in ipairs(WindowHandler.Tabs) do
-					local tabLaunchTime = (i - 1) * interval
-					if elapsed >= tabLaunchTime then
-						if not tab.Frame.Visible then
-							tab.Frame.Visible = true
-							tab.Stroke.Transparency = 0 -- Glowing outline during flight!
-							playSound(Hallow.Sounds.Hover, 1.8, 0.35) -- Crisp pop sound as each leaves!
-						end
-
-						local progress = math.clamp((elapsed - tabLaunchTime) / flightDuration, 0, 1)
-						if progress < 1 then
-							allFinished = false
-						end
-
-						-- Smooth back-bounce easing
-						local eased = TweenService:GetValue(progress, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
-						local finalAngle = ((i - 1) * (2 * math.pi / total)) - (math.pi / 2)
-						local currentAngle = finalAngle - ((1 - eased) * swirlRotation)
-						local currentRadius = startRadius + ((endRadius - startRadius) * eased)
-						local currentSize = 34 + ((130 - 34) * eased)
-
-						tab.Frame.Position = UDim2.new(0.5, math.cos(currentAngle) * currentRadius, 0.5, math.sin(currentAngle) * currentRadius)
-						tab.Frame.Size = UDim2.new(0, currentSize, 0, currentSize)
-						tab.Icon.TextTransparency = 1 - math.clamp(eased * 1.2, 0, 1)
-					else
-						allFinished = false
-					end
-				end
-
-				if allFinished then
-					renderConn:Disconnect()
-
-					-- Fade outlines into resting state
-					task.wait(0.15)
-					for _, tab in ipairs(WindowHandler.Tabs) do
-						tw(tab.Stroke, { Transparency = 1 }, 0.4)
-					end
-					WindowHandler.InStartupAnim = false
-					WindowHandler.Started = true
-				end
-			end)
-		else
-			WindowHandler.InStartupAnim = false
-			WindowHandler.Started = true
+		-- Make all tabs ready as tiny 24px outlined orbs
+		for _, tab in ipairs(WindowHandler.Tabs) do
+			tab.Frame.Size = UDim2.new(0, 24, 0, 24)
+			tab.Frame.Position = UDim2.new(0.5, 0, 0.5, -startRadius)
+			tab.Frame.Visible = true
+			tab.Stroke.Transparency = 0
+			tab.Icon.TextTransparency = 1
+			tab.Label.TextTransparency = 1
 		end
+
+		local startTime = tick()
+		local renderConn
+
+		renderConn = RunService.RenderStepped:Connect(function()
+			local now = tick()
+			local p = math.clamp((now - startTime) / animDuration, 0, 1)
+
+			-- Center core smoothly compresses down from 380px to 210px
+			local coreEase = TweenService:GetValue(p, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			local currentCoreSize = 380 - ((380 - 210) * coreEase)
+			CoreHolder.Size = UDim2.new(0, currentCoreSize, 0, currentCoreSize)
+
+			-- Radial spin accelerates, then overshoots into final slot
+			local spinProgress = (1 - p) ^ 1.85
+			local radialEase = TweenService:GetValue(p, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			local currentRadius = startRadius + ((endRadius - startRadius) * radialEase)
+			local currentTabSize = 24 + ((130 - 24) * radialEase)
+
+			for i, tab in ipairs(WindowHandler.Tabs) do
+				local finalAngle = ((i - 1) * (2 * math.pi / total)) - (math.pi / 2)
+				local currentAngle = finalAngle - (spinProgress * fullRotations)
+
+				local targetX = math.cos(currentAngle) * currentRadius
+				local targetY = math.sin(currentAngle) * currentRadius
+
+				tab.Frame.Position = UDim2.new(0.5, targetX, 0.5, targetY)
+				tab.Frame.Size = UDim2.new(0, currentTabSize, 0, currentTabSize)
+				tab.Icon.TextTransparency = 1 - math.clamp(p * 1.5, 0, 1)
+			end
+
+			if p >= 1 then
+				renderConn:Disconnect()
+
+				-- Final Climax: Bounce settlement, ding sound, and outline flash!
+				playSound(Hallow.Sounds.Notify, 1.4, 1.0) -- Ding!
+
+				for _, tab in ipairs(WindowHandler.Tabs) do
+					tab.Stroke.Thickness = 4.8
+				end
+
+				task.wait(0.18)
+
+				-- Fade outlines into resting state
+				for _, tab in ipairs(WindowHandler.Tabs) do
+					tw(tab.Stroke, { Transparency = 1, Thickness = 3.8 }, 0.4)
+				end
+
+				WindowHandler.InStartupAnim = false
+				WindowHandler.Started = true
+			end
+		end)
 	end)
 
 	function WindowHandler:CreateActionNode(tabName, icon, callback)
