@@ -116,12 +116,12 @@ local houseOrder = {
 --   CREATE MAIN WINDOW
 -- =======================================================================
 local window = Hallow:CreateWindow({
-	Title = "OP HUB"
+	Title = "Hallow"
 })
 
 window:Notify({
-	title = "OP HUB",
-	content = "OP HUB loaded successfully.",
+	title = "Hallow",
+	content = "Hallow loaded successfully.",
 	duration = 3.5
 })
 
