@@ -1,6 +1,6 @@
 -- =======================================================================
 --   🎃 HALLOW-RADIAL UI LIBRARY (STANDALONE MODULE)
---   Theme: Beveled Carved Pumpkin / Edge-Faded Smooth Scroll / Amber Glow
+--   Theme: Beveled Carved Pumpkin / Fixed Return Highlight / Clean Reset
 -- =======================================================================
 
 local CoreGui          = game:GetService("CoreGui")
@@ -239,7 +239,7 @@ function Hallow:CreateWindow(settings)
 		tw(MiniStroke, { Color = Hallow.Theme.Amber, Thickness = 3.5 })
 	end)
 
-	-- Central Core: Starts HUGE at 380px on load!
+	-- Central Core: Starts HUGE at 380px on load
 	local CoreHolder = Instance.new("Frame")
 	CoreHolder.Name = "CoreHolder"
 	CoreHolder.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -367,9 +367,7 @@ function Hallow:CreateWindow(settings)
 		tw(ReturnStroke, { Color = Hallow.Theme.BorderDim, Thickness = 1.4 })
 	end)
 
-	-- ===================================================================
-	--   ✨ FADE-MASK CONTAINER (Softly dissolves top & bottom list cutoffs)
-	-- ===================================================================
+	-- Fade-Mask Container for options list
 	local PagesMask = Instance.new("CanvasGroup")
 	PagesMask.Name = "PagesMask"
 	PagesMask.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -384,10 +382,10 @@ function Hallow:CreateWindow(settings)
 	MaskGradient.Name = "FadeMask"
 	MaskGradient.Rotation = 90
 	MaskGradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0.00, 1.0), -- 100% transparent at top edge
-		NumberSequenceKeypoint.new(0.08, 0.0), -- Fully visible after 36px down
-		NumberSequenceKeypoint.new(0.92, 0.0), -- Fully visible until 36px from bottom
-		NumberSequenceKeypoint.new(1.00, 1.0), -- 100% transparent at bottom edge
+		NumberSequenceKeypoint.new(0.00, 1.0),
+		NumberSequenceKeypoint.new(0.08, 0.0),
+		NumberSequenceKeypoint.new(0.92, 0.0),
+		NumberSequenceKeypoint.new(1.00, 1.0),
 	})
 
 	-- Window Handler State
@@ -402,6 +400,51 @@ function Hallow:CreateWindow(settings)
 		PagesMask = PagesMask
 	}
 
+	-- Clean Helper: Resets any tab back to its idle, unhighlighted baseline!
+	local function resetTabToIdle(tab)
+		local isClose = (string.lower(tab.Title):find("close") ~= nil)
+
+		tw(tab.Frame, {
+			Size = UDim2.new(0, 130, 0, 130),
+			BackgroundColor3 = Hallow.Theme.NodeBg
+		}, 0.2)
+
+		-- Turn off outer glowing stroke
+		tw(tab.Stroke, {
+			Transparency = 1,
+			Color = isClose and Hallow.Theme.RedClose or Hallow.Theme.Amber
+		}, 0.2)
+
+		-- Reset inner bevel groove ring to subtle dark border!
+		if tab.DecStroke then
+			tw(tab.DecStroke, {
+				Transparency = 0.5,
+				Color = Hallow.Theme.BorderDim
+			}, 0.2)
+		end
+
+		-- Reset inner beveled plate
+		if tab.InnerPlate then
+			tw(tab.InnerPlate, { BackgroundColor3 = Hallow.Theme.InnerRing }, 0.2)
+		end
+
+		-- Reset icon back to centered position & neutral color!
+		if tab.Icon then
+			tw(tab.Icon, {
+				Position = UDim2.new(0.5, 0, 0.5, 0),
+				TextColor3 = isClose and Hallow.Theme.RedClose or Hallow.Theme.TextMuted
+			}, 0.2)
+		end
+
+		-- Hide hover label completely
+		if tab.Label then
+			tw(tab.Label, {
+				TextTransparency = 1,
+				TextColor3 = isClose and Color3.fromRGB(255, 120, 120) or Hallow.Theme.TextPrimary
+			}, 0.2)
+		end
+	end
+
 	local function collapseToRadial()
 		if not WindowHandler.IsExpanded or WindowHandler.IsMinimized or WindowHandler.InStartupAnim then return end
 		WindowHandler.IsExpanded = false
@@ -412,13 +455,11 @@ function Hallow:CreateWindow(settings)
 
 		tw(CoreHolder, { Size = UDim2.new(0, 210, 0, 210) }, 0.4, Enum.EasingStyle.Back)
 
+		-- Cleanly restore every single tab to unhighlighted baseline!
 		for _, tab in ipairs(WindowHandler.Tabs) do
 			if tab.Page then tab.Page.Visible = false end
 			tab.Frame.Visible = true
-			tw(tab.Frame, { Size = UDim2.new(0, 130, 0, 130), BackgroundColor3 = Hallow.Theme.NodeBg }, 0.35, Enum.EasingStyle.Back)
-			tw(tab.Stroke, { Transparency = 1 })
-			tw(tab.InnerPlate, { BackgroundColor3 = Hallow.Theme.InnerRing }, 0.35)
-			tab.Label.TextTransparency = 1
+			resetTabToIdle(tab)
 		end
 		WindowHandler.CurrentActive = nil
 	end
@@ -471,10 +512,7 @@ function Hallow:CreateWindow(settings)
 			local targetY = math.sin(angle) * WindowHandler.Radius
 
 			tab.Frame.Position = UDim2.new(0.5, targetX, 0.5, targetY)
-			tw(tab.Frame, { Size = UDim2.new(0, 130, 0, 130) }, 0.45, Enum.EasingStyle.Back)
-			tw(tab.Stroke, { Transparency = 1 })
-			tw(tab.InnerPlate, { BackgroundColor3 = Hallow.Theme.InnerRing }, 0.45)
-			tab.Label.TextTransparency = 1
+			resetTabToIdle(tab)
 		end
 	end
 
@@ -597,7 +635,7 @@ function Hallow:CreateWindow(settings)
 			end
 		end)
 
-		return NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate
+		return NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate, NodeDecStroke
 	end
 
 	function WindowHandler:RealignNodes()
@@ -624,7 +662,6 @@ function Hallow:CreateWindow(settings)
 		task.wait(0.35)
 		WindowHandler.InStartupAnim = true
 
-		-- Stage 1: Big Core Center Stage
 		playSound(Hallow.Sounds.Open, 0.9, 1.0)
 		task.wait(0.4)
 
@@ -683,7 +720,7 @@ function Hallow:CreateWindow(settings)
 				task.wait(0.18)
 
 				for _, tab in ipairs(WindowHandler.Tabs) do
-					tw(tab.Stroke, { Transparency = 1, Thickness = 3.8 }, 0.4)
+					resetTabToIdle(tab)
 				end
 
 				WindowHandler.InStartupAnim = false
@@ -694,7 +731,7 @@ function Hallow:CreateWindow(settings)
 
 	function WindowHandler:CreateActionNode(tabName, icon, callback)
 		local isClose = (string.lower(tabName):find("close") ~= nil)
-		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate = createBaseNode(tabName, icon, isClose)
+		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate, NodeDecStroke = createBaseNode(tabName, icon, isClose)
 
 		local tabData = {
 			Frame = NodeFrame,
@@ -702,6 +739,7 @@ function Hallow:CreateWindow(settings)
 			Icon = NodeIcon,
 			Label = NodeLabel,
 			Stroke = NodeStroke,
+			DecStroke = NodeDecStroke,
 			InnerPlate = InnerNodePlate,
 			Title = tabName
 		}
@@ -713,16 +751,15 @@ function Hallow:CreateWindow(settings)
 			playSound(Hallow.Sounds.Click, 1.1, 0.95)
 			tw(NodeFrame, { BackgroundColor3 = Hallow.Theme.NodeActive, Size = UDim2.new(0, 138, 0, 138) }, 0.1)
 			task.delay(0.12, function()
-				tw(NodeFrame, { BackgroundColor3 = Hallow.Theme.NodeBg, Size = UDim2.new(0, 130, 0, 130) }, 0.15)
+				resetTabToIdle(tabData)
 			end)
 			task.spawn(callback or function() end)
 		end)
 	end
 
 	function WindowHandler:CreateTab(tabName, icon)
-		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate = createBaseNode(tabName, icon, false)
+		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate, NodeDecStroke = createBaseNode(tabName, icon, false)
 
-		-- Placed inside PagesMask to benefit from the smooth edge dissolve gradient
 		local Page = Instance.new("ScrollingFrame")
 		Page.Name = tabName .. "_Page"
 		Page.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -753,6 +790,7 @@ function Hallow:CreateWindow(settings)
 			Icon = NodeIcon,
 			Label = NodeLabel,
 			Stroke = NodeStroke,
+			DecStroke = NodeDecStroke,
 			InnerPlate = InnerNodePlate,
 			Page = Page,
 			Title = tabName
@@ -767,8 +805,10 @@ function Hallow:CreateWindow(settings)
 
 			playSound(Hallow.Sounds.Open, 1.15, 0.95)
 
+			-- Instantly clean and hide all tabs
 			for _, tab in ipairs(WindowHandler.Tabs) do
 				if tab.Page then tab.Page.Visible = false end
+				resetTabToIdle(tab)
 				tw(tab.Frame, { Size = UDim2.new(0, 0, 0, 0) }, 0.25).Completed:Connect(function()
 					tab.Frame.Visible = false
 				end)
@@ -837,7 +877,6 @@ function Hallow:CreateWindow(settings)
 			sLbl.Position = UDim2.new(0, 8, 0, 10)
 			sLbl.Size = UDim2.new(1, -16, 0, 20)
 			sLbl.BackgroundTransparency = 1
-			sParent = sec
 			sLbl.Parent = sec
 
 			local line = Instance.new("Frame")
