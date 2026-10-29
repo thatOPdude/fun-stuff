@@ -1,6 +1,6 @@
 -- =======================================================================
 --   🎃 HALLOW-RADIAL UI LIBRARY (STANDALONE MODULE)
---   Theme: Beveled Carved Pumpkin / Synchronized Accelerating Orbital Swirl
+--   Theme: Beveled Carved Pumpkin / Edge-Faded Smooth Scroll / Amber Glow
 -- =======================================================================
 
 local CoreGui          = game:GetService("CoreGui")
@@ -244,7 +244,7 @@ function Hallow:CreateWindow(settings)
 	CoreHolder.Name = "CoreHolder"
 	CoreHolder.AnchorPoint = Vector2.new(0.5, 0.5)
 	CoreHolder.Position = UDim2.new(0.5, 0, 0.5, 0)
-	CoreHolder.Size = UDim2.new(0, 380, 0, 380) -- Guaranteed massive on frame 0
+	CoreHolder.Size = UDim2.new(0, 380, 0, 380)
 	CoreHolder.BackgroundColor3 = Hallow.Theme.CoreBg
 	CoreHolder.BorderSizePixel = 0
 	CoreHolder.ClipsDescendants = false
@@ -367,8 +367,28 @@ function Hallow:CreateWindow(settings)
 		tw(ReturnStroke, { Color = Hallow.Theme.BorderDim, Thickness = 1.4 })
 	end)
 
-	local PagesFolder = Instance.new("Folder", ExpandedView)
-	PagesFolder.Name = "Pages"
+	-- ===================================================================
+	--   ✨ FADE-MASK CONTAINER (Softly dissolves top & bottom list cutoffs)
+	-- ===================================================================
+	local PagesMask = Instance.new("CanvasGroup")
+	PagesMask.Name = "PagesMask"
+	PagesMask.AnchorPoint = Vector2.new(0.5, 0.5)
+	PagesMask.Position = UDim2.new(0.5, 0, 0.51, 0)
+	PagesMask.Size = UDim2.new(0, 420, 0, 470)
+	PagesMask.BackgroundTransparency = 1
+	PagesMask.BorderSizePixel = 0
+	PagesMask.GroupTransparency = 0
+	PagesMask.Parent = ExpandedView
+
+	local MaskGradient = Instance.new("UIGradient", PagesMask)
+	MaskGradient.Name = "FadeMask"
+	MaskGradient.Rotation = 90
+	MaskGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0.00, 1.0), -- 100% transparent at top edge
+		NumberSequenceKeypoint.new(0.08, 0.0), -- Fully visible after 36px down
+		NumberSequenceKeypoint.new(0.92, 0.0), -- Fully visible until 36px from bottom
+		NumberSequenceKeypoint.new(1.00, 1.0), -- 100% transparent at bottom edge
+	})
 
 	-- Window Handler State
 	local WindowHandler = {
@@ -378,7 +398,8 @@ function Hallow:CreateWindow(settings)
 		IsExpanded = false,
 		IsMinimized = false,
 		Started = false,
-		InStartupAnim = false
+		InStartupAnim = false,
+		PagesMask = PagesMask
 	}
 
 	local function collapseToRadial()
@@ -470,7 +491,7 @@ function Hallow:CreateWindow(settings)
 		Hallow:Notify(cfg)
 	end
 
-	-- Node Base Generator (Clean Icons, No Cluttering Idle Titles)
+	-- Node Base Generator
 	local function createBaseNode(title, iconText, isCloseTab)
 		local NodeFrame = Instance.new("Frame")
 		NodeFrame.Name = title .. "_Node"
@@ -532,7 +553,6 @@ function Hallow:CreateWindow(settings)
 		NodeIcon.BackgroundTransparency = 1
 		NodeIcon.Parent = InnerNodePlate
 
-		-- Title only appears on hover!
 		local NodeLabel = Instance.new("TextLabel")
 		NodeLabel.Text = string.upper(title)
 		NodeLabel.Font = Enum.Font.GothamBold
@@ -542,7 +562,7 @@ function Hallow:CreateWindow(settings)
 		NodeLabel.Position = UDim2.new(0.5, 0, 1, -12)
 		NodeLabel.Size = UDim2.new(1, -10, 0, 18)
 		NodeLabel.BackgroundTransparency = 1
-		NodeLabel.TextTransparency = 1 -- Hidden by default
+		NodeLabel.TextTransparency = 1
 		NodeLabel.Parent = InnerNodePlate
 
 		ClickBtn.MouseEnter:Connect(function()
@@ -601,21 +621,19 @@ function Hallow:CreateWindow(settings)
 	--   ✨ SYNCHRONIZED SHRINK + ACCELERATED ORBITAL REVOLUTION ANIMATION
 	-- ===================================================================
 	task.defer(function()
-		-- Give script plenty of time to register all tabs
 		task.wait(0.35)
 		WindowHandler.InStartupAnim = true
 
-		-- Stage 1: Big Orb sitting center stage
+		-- Stage 1: Big Core Center Stage
 		playSound(Hallow.Sounds.Open, 0.9, 1.0)
 		task.wait(0.4)
 
 		local total = #WindowHandler.Tabs
 		local animDuration = 1.3
-		local fullRotations = math.pi * 2.8 -- Multi-circle swirl
+		local fullRotations = math.pi * 2.8
 		local startRadius = 70
 		local endRadius = WindowHandler.Radius
 
-		-- Make all tabs ready as tiny 24px outlined orbs
 		for _, tab in ipairs(WindowHandler.Tabs) do
 			tab.Frame.Size = UDim2.new(0, 24, 0, 24)
 			tab.Frame.Position = UDim2.new(0.5, 0, 0.5, -startRadius)
@@ -632,12 +650,10 @@ function Hallow:CreateWindow(settings)
 			local now = tick()
 			local p = math.clamp((now - startTime) / animDuration, 0, 1)
 
-			-- Center core smoothly compresses down from 380px to 210px
 			local coreEase = TweenService:GetValue(p, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 			local currentCoreSize = 380 - ((380 - 210) * coreEase)
 			CoreHolder.Size = UDim2.new(0, currentCoreSize, 0, currentCoreSize)
 
-			-- Radial spin accelerates, then overshoots into final slot
 			local spinProgress = (1 - p) ^ 1.85
 			local radialEase = TweenService:GetValue(p, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 			local currentRadius = startRadius + ((endRadius - startRadius) * radialEase)
@@ -658,7 +674,6 @@ function Hallow:CreateWindow(settings)
 			if p >= 1 then
 				renderConn:Disconnect()
 
-				-- Final Climax: Bounce settlement, ding sound, and outline flash!
 				playSound(Hallow.Sounds.Notify, 1.4, 1.0) -- Ding!
 
 				for _, tab in ipairs(WindowHandler.Tabs) do
@@ -667,7 +682,6 @@ function Hallow:CreateWindow(settings)
 
 				task.wait(0.18)
 
-				-- Fade outlines into resting state
 				for _, tab in ipairs(WindowHandler.Tabs) do
 					tw(tab.Stroke, { Transparency = 1, Thickness = 3.8 }, 0.4)
 				end
@@ -708,28 +722,29 @@ function Hallow:CreateWindow(settings)
 	function WindowHandler:CreateTab(tabName, icon)
 		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate = createBaseNode(tabName, icon, false)
 
+		-- Placed inside PagesMask to benefit from the smooth edge dissolve gradient
 		local Page = Instance.new("ScrollingFrame")
 		Page.Name = tabName .. "_Page"
 		Page.AnchorPoint = Vector2.new(0.5, 0.5)
-		Page.Position = UDim2.new(0.5, 0, 0.51, 0)
-		Page.Size = UDim2.new(0, 420, 0, 460)
+		Page.Position = UDim2.new(0.5, 0, 0.5, 0)
+		Page.Size = UDim2.new(1, 0, 1, 0)
 		Page.BackgroundTransparency = 1
 		Page.BorderSizePixel = 0
 		Page.ScrollBarThickness = 3
 		Page.ScrollBarImageColor3 = Hallow.Theme.Amber
 		Page.ScrollBarImageTransparency = 0.5
 		Page.Visible = false
-		Page.Parent = PagesFolder
+		Page.Parent = PagesMask
 
 		local PageLayout = Instance.new("UIListLayout", Page)
 		PageLayout.Padding = UDim.new(0, 10)
 
 		local PagePadding = Instance.new("UIPadding", Page)
-		PagePadding.PaddingTop = UDim.new(0, 8)
+		PagePadding.PaddingTop = UDim.new(0, 16)
 		PagePadding.PaddingBottom = UDim.new(0, 36)
 
 		PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-			Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 44)
+			Page.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 52)
 		end)
 
 		local tabData = {
@@ -822,6 +837,7 @@ function Hallow:CreateWindow(settings)
 			sLbl.Position = UDim2.new(0, 8, 0, 10)
 			sLbl.Size = UDim2.new(1, -16, 0, 20)
 			sLbl.BackgroundTransparency = 1
+			sParent = sec
 			sLbl.Parent = sec
 
 			local line = Instance.new("Frame")
