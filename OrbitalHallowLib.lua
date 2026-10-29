@@ -1,6 +1,6 @@
 -- =======================================================================
 --   🎃 HALLOW-RADIAL UI LIBRARY (STANDALONE MODULE)
---   Theme: Beveled Carved Pumpkin / Amber Glow / Pure Circular Radial HUD
+--   Theme: Beveled Carved Pumpkin / Cinematic Orbital Startup / Amber Glow
 -- =======================================================================
 
 local CoreGui          = game:GetService("CoreGui")
@@ -8,6 +8,7 @@ local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService     = game:GetService("TweenService")
 local SoundService     = game:GetService("SoundService")
+local RunService       = game:GetService("RunService")
 local localPlayer      = Players.LocalPlayer
 
 -- GUI Container Selector
@@ -36,7 +37,7 @@ local Hallow = {
 		Amber        = Color3.fromRGB(255, 140, 20),
 		AmberGlow    = Color3.fromRGB(255, 195, 50),   -- Candlelight amber glow
 		AmberDark    = Color3.fromRGB(150, 65, 10),
-		RedClose     = Color3.fromRGB(255, 55, 65),    -- Pure bright Red for Close X
+		RedClose     = Color3.fromRGB(255, 55, 65),    -- Bright Red Close X
 		RedCloseGlow = Color3.fromRGB(255, 95, 95),
 		CardBg       = Color3.fromRGB(28, 11, 4),
 		CardHover    = Color3.fromRGB(46, 18, 6),
@@ -239,12 +240,12 @@ function Hallow:CreateWindow(settings)
 		tw(MiniStroke, { Color = Hallow.Theme.Amber, Thickness = 3.5 })
 	end)
 
-	-- Central Core (210px)
+	-- Central Core (Starts at 0, bursts to 360px in startup, settles at 210px)
 	local CoreHolder = Instance.new("Frame")
 	CoreHolder.Name = "CoreHolder"
 	CoreHolder.AnchorPoint = Vector2.new(0.5, 0.5)
 	CoreHolder.Position = UDim2.new(0, 0, 0, 0)
-	CoreHolder.Size = UDim2.new(0, 0, 0, 0) -- Starts at 0, fans open
+	CoreHolder.Size = UDim2.new(0, 0, 0, 0)
 	CoreHolder.BackgroundColor3 = Hallow.Theme.CoreBg
 	CoreHolder.BorderSizePixel = 0
 	CoreHolder.ClipsDescendants = false
@@ -376,11 +377,12 @@ function Hallow:CreateWindow(settings)
 		CurrentActive = nil,
 		IsExpanded = false,
 		IsMinimized = false,
-		Started = false
+		Started = false,
+		InStartupAnim = false
 	}
 
 	local function collapseToRadial()
-		if not WindowHandler.IsExpanded or WindowHandler.IsMinimized then return end
+		if not WindowHandler.IsExpanded or WindowHandler.IsMinimized or WindowHandler.InStartupAnim then return end
 		WindowHandler.IsExpanded = false
 		playSound(Hallow.Sounds.Click, 0.9)
 
@@ -402,7 +404,7 @@ function Hallow:CreateWindow(settings)
 	ReturnBtn.MouseButton1Click:Connect(collapseToRadial)
 
 	function WindowHandler:Minimize()
-		if WindowHandler.IsMinimized then return end
+		if WindowHandler.IsMinimized or WindowHandler.InStartupAnim then return end
 		WindowHandler.IsMinimized = true
 		playSound(Hallow.Sounds.Click, 0.85)
 
@@ -423,7 +425,7 @@ function Hallow:CreateWindow(settings)
 	end
 
 	function WindowHandler:Restore()
-		if not WindowHandler.IsMinimized then return end
+		if not WindowHandler.IsMinimized or WindowHandler.InStartupAnim then return end
 		WindowHandler.IsMinimized = false
 		playSound(Hallow.Sounds.Open, 1.1)
 
@@ -466,7 +468,7 @@ function Hallow:CreateWindow(settings)
 		Hallow:Notify(cfg)
 	end
 
-	-- Node Creation Base
+	-- Node Base Generator
 	local function createBaseNode(title, iconText, isCloseTab)
 		local NodeFrame = Instance.new("Frame")
 		NodeFrame.Name = title .. "_Node"
@@ -540,7 +542,7 @@ function Hallow:CreateWindow(settings)
 
 		ClickBtn.MouseEnter:Connect(function()
 			playHoverSound(1.65, 0.4)
-			if not WindowHandler.IsExpanded and not WindowHandler.IsMinimized then
+			if not WindowHandler.IsExpanded and not WindowHandler.IsMinimized and not WindowHandler.InStartupAnim then
 				tw(NodeFrame, { Size = UDim2.new(0, 146, 0, 146), BackgroundColor3 = Hallow.Theme.NodeHover }, 0.18)
 				tw(InnerNodePlate, { BackgroundColor3 = Color3.fromRGB(44, 18, 6) }, 0.18)
 				tw(NodeStroke, {
@@ -554,7 +556,7 @@ function Hallow:CreateWindow(settings)
 		end)
 
 		ClickBtn.MouseLeave:Connect(function()
-			if not WindowHandler.IsExpanded and not WindowHandler.IsMinimized then
+			if not WindowHandler.IsExpanded and not WindowHandler.IsMinimized and not WindowHandler.InStartupAnim then
 				tw(NodeFrame, { Size = UDim2.new(0, 130, 0, 130), BackgroundColor3 = Hallow.Theme.NodeBg }, 0.18)
 				tw(InnerNodePlate, { BackgroundColor3 = Hallow.Theme.InnerRing }, 0.18)
 				tw(NodeStroke, { Transparency = 1 }, 0.18)
@@ -576,7 +578,7 @@ function Hallow:CreateWindow(settings)
 			local targetX = math.cos(angle) * self.Radius
 			local targetY = math.sin(angle) * self.Radius
 
-			if self.Started then
+			if self.Started and not self.InStartupAnim then
 				tw(tab.Frame, { Position = UDim2.new(0.5, targetX, 0.5, targetY) }, 0.45, Enum.EasingStyle.Back)
 			else
 				tab.Frame.Position = UDim2.new(0.5, targetX, 0.5, targetY)
@@ -584,31 +586,102 @@ function Hallow:CreateWindow(settings)
 		end
 	end
 
-	-- Auto fan-out on startup
+	-- ===================================================================
+	--   ✨ CINEMATIC ORBITAL STARTUP ANIMATION
+	-- ===================================================================
 	task.defer(function()
-		task.wait(0.1)
-		WindowHandler.Started = true
-		playSound(Hallow.Sounds.Open, 1, 0.95)
-		tw(CoreHolder, { Size = UDim2.new(0, 210, 0, 210) }, 0.5, Enum.EasingStyle.Back)
+		task.wait(0.12)
+		WindowHandler.InStartupAnim = true
 
+		-- Stage 1: Big Grand Center Reveal (Massive 360px)
+		playSound(Hallow.Sounds.Open, 0.9, 1.0)
+		CoreHolder.Size = UDim2.new(0, 0, 0, 0)
+		CoreHolder.Visible = true
+		tw(CoreHolder, { Size = UDim2.new(0, 360, 0, 360) }, 0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+		task.wait(0.65)
+
+		-- Stage 2: Center Compresses & Snaps Down to Resting 210px
+		playSound(Hallow.Sounds.Click, 0.75, 0.9)
+		tw(CoreHolder, { Size = UDim2.new(0, 210, 0, 210) }, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+		task.wait(0.2)
+
+		-- Stage 3 & 4: Spawn Small Outlined Orbs & Orbit Swirl Outward
 		local total = #WindowHandler.Tabs
-		for i, tab in ipairs(WindowHandler.Tabs) do
-			local angle = ((i - 1) * (2 * math.pi / total)) - (math.pi / 2)
-			local targetX = math.cos(angle) * WindowHandler.Radius
-			local targetY = math.sin(angle) * WindowHandler.Radius
+		if total > 0 then
+			playSound(Hallow.Sounds.Notify, 1.25, 0.85)
 
-			tab.Frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-			tab.Frame.Size = UDim2.new(0, 0, 0, 0)
-			tab.Frame.Visible = true
+			-- Initialize all tabs as small glowing outlined orbs close to core
+			for i, tab in ipairs(WindowHandler.Tabs) do
+				local baseAngle = ((i - 1) * (2 * math.pi / total)) - (math.pi / 2)
+				local startAngle = baseAngle - (math.pi * 1.5) -- Offset by 270 deg
+				local startRadius = 110
 
-			tw(tab.Frame, {
-				Position = UDim2.new(0.5, targetX, 0.5, targetY),
-				Size = UDim2.new(0, 130, 0, 130)
-			}, 0.5, Enum.EasingStyle.Back)
+				tab.Frame.Position = UDim2.new(0.5, math.cos(startAngle) * startRadius, 0.5, math.sin(startAngle) * startRadius)
+				tab.Frame.Size = UDim2.new(0, 36, 0, 36)
+				tab.Frame.Visible = true
+
+				-- Glowing Outline Active!
+				tab.Stroke.Transparency = 0
+				tab.Icon.TextTransparency = 1
+				tab.Label.TextTransparency = 1
+			end
+
+			-- Swirl & Expand Physics Controller
+			local swirlVal = Instance.new("NumberValue")
+			swirlVal.Value = 0
+
+			local spinRotation = math.pi * 1.5 -- 270 degree revolution
+			local startRadius = 110
+			local endRadius = WindowHandler.Radius
+
+			local renderConn = RunService.RenderStepped:Connect(function()
+				local p = swirlVal.Value
+				for i, tab in ipairs(WindowHandler.Tabs) do
+					local baseAngle = ((i - 1) * (2 * math.pi / total)) - (math.pi / 2)
+					local currentAngle = baseAngle - ((1 - p) * spinRotation)
+					local currentRadius = startRadius + ((endRadius - startRadius) * p)
+
+					local targetX = math.cos(currentAngle) * currentRadius
+					local targetY = math.sin(currentAngle) * currentRadius
+
+					tab.Frame.Position = UDim2.new(0.5, targetX, 0.5, targetY)
+
+					-- Swell from 36px orb to 130px beveled tab
+					local currentSize = 36 + ((130 - 36) * p)
+					tab.Frame.Size = UDim2.new(0, currentSize, 0, currentSize)
+
+					-- Reveal inner text & icon as they finish revolving
+					local textAlpha = math.clamp((p - 0.45) / 0.55, 0, 1)
+					tab.Icon.TextTransparency = 1 - textAlpha
+					tab.Label.TextTransparency = 1 - textAlpha
+				end
+			end)
+
+			-- Swirl Tween with Juicy Back Bounce
+			local swirlTween = TweenService:Create(
+				swirlVal,
+				TweenInfo.new(1.1, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+				{ Value = 1 }
+			)
+			swirlTween:Play()
+			swirlTween.Completed:Wait()
+
+			renderConn:Disconnect()
+			swirlVal:Destroy()
+
+			-- Settle: Fade the startup outline into idle state
+			task.wait(0.2)
+			for _, tab in ipairs(WindowHandler.Tabs) do
+				tw(tab.Stroke, { Transparency = 1 }, 0.4)
+			end
 		end
+
+		WindowHandler.InStartupAnim = false
+		WindowHandler.Started = true
 	end)
 
-	-- Direct Action Node (e.g. Close tab)
 	function WindowHandler:CreateActionNode(tabName, icon, callback)
 		local isClose = (string.lower(tabName):find("close") ~= nil)
 		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate = createBaseNode(tabName, icon, isClose)
@@ -626,7 +699,7 @@ function Hallow:CreateWindow(settings)
 		self:RealignNodes()
 
 		ClickBtn.MouseButton1Click:Connect(function()
-			if self.IsExpanded or self.IsMinimized then return end
+			if self.IsExpanded or self.IsMinimized or self.InStartupAnim then return end
 			playSound(Hallow.Sounds.Click, 1.1, 0.95)
 			tw(NodeFrame, { BackgroundColor3 = Hallow.Theme.NodeActive, Size = UDim2.new(0, 138, 0, 138) }, 0.1)
 			task.delay(0.12, function()
@@ -636,7 +709,6 @@ function Hallow:CreateWindow(settings)
 		end)
 	end
 
-	-- Create Standard Tab (Options Portal)
 	function WindowHandler:CreateTab(tabName, icon)
 		local NodeFrame, ClickBtn, NodeStroke, NodeIcon, NodeLabel, InnerNodePlate = createBaseNode(tabName, icon, false)
 
@@ -678,7 +750,7 @@ function Hallow:CreateWindow(settings)
 		self:RealignNodes()
 
 		ClickBtn.MouseButton1Click:Connect(function()
-			if WindowHandler.IsExpanded or WindowHandler.IsMinimized then return end
+			if WindowHandler.IsExpanded or WindowHandler.IsMinimized or WindowHandler.InStartupAnim then return end
 			WindowHandler.IsExpanded = true
 			WindowHandler.CurrentActive = tabData
 
@@ -700,7 +772,6 @@ function Hallow:CreateWindow(settings)
 			tw(CoreHolder, { Size = UDim2.new(0, 680, 0, 680) }, 0.45, Enum.EasingStyle.Back)
 		end)
 
-		-- Elements Inside Portal
 		local TabElements = {}
 
 		local function makeCapsule(h)
@@ -740,7 +811,6 @@ function Hallow:CreateWindow(settings)
 			return Card, stroke, Pip
 		end
 
-		-- Section Header
 		function TabElements:CreateSection(secName)
 			local sec = Instance.new("Frame")
 			sec.Size = UDim2.new(1, -12, 0, 36)
@@ -766,7 +836,6 @@ function Hallow:CreateWindow(settings)
 			line.Parent = sec
 		end
 
-		-- Button Component
 		function TabElements:CreateButton(opts)
 			opts = opts or {}
 			local name = opts.Name or opts.Title or "Button"
@@ -825,7 +894,6 @@ function Hallow:CreateWindow(settings)
 		end
 		TabElements.AddButton = TabElements.CreateButton
 
-		-- Toggle Component
 		function TabElements:CreateToggle(opts)
 			opts = opts or {}
 			local name = opts.Name or opts.Title or "Toggle"
@@ -897,7 +965,6 @@ function Hallow:CreateWindow(settings)
 		end
 		TabElements.AddToggle = TabElements.CreateToggle
 
-		-- Slider Component
 		function TabElements:CreateSlider(opts)
 			opts = opts or {}
 			local name = opts.Name or opts.Title or "Slider"
@@ -1002,7 +1069,6 @@ function Hallow:CreateWindow(settings)
 		end
 		TabElements.AddSlider = TabElements.CreateSlider
 
-		-- Dropdown Component
 		function TabElements:CreateDropdown(opts)
 			opts = opts or {}
 			local name = opts.Name or opts.Title or "Dropdown"
@@ -1106,7 +1172,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- Keybind Component
 		function TabElements:CreateKeybind(opts)
 			opts = opts or {}
 			local name = opts.Name or opts.Title or "Keybind"
@@ -1158,7 +1223,6 @@ function Hallow:CreateWindow(settings)
 			end)
 		end
 
-		-- Paragraph Component
 		function TabElements:CreateParagraph(opts)
 			opts = opts or {}
 			local title = opts.Title or "Information"
